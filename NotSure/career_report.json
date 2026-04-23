@@ -1,0 +1,69 @@
+{
+  "user_answers": {
+    "free_day_activities": "hiking",
+    "work_style": "I’m drawn to hands-on work shaped by strong ideas, especially where people and physical space intersect.",
+    "problem_solving": "I enjoy solving spatial and functional problems—figuring out how to make environments more efficient, meaningful, and human-centered.",
+    "environment": "I enjoy solving spatial and functional problems—figuring out how to make environments more efficient, meaningful, and human-centered.",
+    "preference": "A design studio that connects closely to real sites—so part studio, part outdoors.",
+    "interests": "Design theory, environmental sustainability, human behavior in space, and how culture shapes the built environment.",
+    "master_skill": "Advanced spatial visualization—so I can instantly translate abstract concepts into precise, buildable designs.",
+    "team_size": "With small, multidisciplinary teams—collaborative, but with clear design direction.",
+    "activity_type": "Integrated sustainable design strategy—so every project balances aesthetics, function, and environmental performance from day one.",
+    "impact": "With small, multidisciplinary teams—collaborative, but with clear design direction."
+  },
+  "career_analysis": {
+    "personality_traits": [
+      "Creative",
+      "Analytical",
+      "Collaborative"
+    ],
+    "core_strengths": [
+      "Spatial reasoning",
+      "Sustainability focus",
+      "Human-centered design"
+    ],
+    "work_style_summary": "You thrive in hands‑on environments where strong ideas meet physical space, preferring to tackle spatial and functional challenges that make environments more efficient, meaningful, and human‑centered.",
+    "ideal_environment": "A studio‑like setting that is closely tied to real sites, blending indoor design work with outdoor field experience."
+  },
+  "career_recommendations": [
+    {
+      "rank": 1,
+      "cluster": "Real Estate & Property Management",
+      "top_roles": [
+        "Architect",
+        "Urban Planner",
+        "Sustainable Design Consultant"
+      ],
+      "match_reason": "Your passion for spatial problem‑solving, sustainability, and human behavior in space aligns with roles that shape built environments and require strong design vision.",
+      "confidence_score": 95
+    },
+    {
+      "rank": 2,
+      "cluster": "Trades & Practical Professions",
+      "top_roles": [
+        "Construction Project Manager",
+        "Site Planner",
+        "Building Inspector"
+      ],
+      "match_reason": "You enjoy hands‑on work and small multidisciplinary teams, making project management and site‑level roles a natural fit for applying your design ideas on the ground.",
+      "confidence_score": 83
+    },
+    {
+      "rank": 3,
+      "cluster": "Science & Engineering",
+      "top_roles": [
+        "Environmental Engineer",
+        "Civil Engineer",
+        "Sustainability Analyst"
+      ],
+      "match_reason": "Your interest in environmental sustainability and advanced spatial visualization dovetails with engineering roles that focus on efficient, human‑centered built environments.",
+      "confidence_score": 72
+    }
+  ],
+  "next_steps": [
+    "Build a portfolio showcasing sustainable design projects that blend aesthetics, function, and environmental performance.",
+    "Network with local architects, urban planners, and sustainability consultants to learn about studio‑based opportunities.",
+    "Enroll in an advanced spatial visualization course or workshop to sharpen your dream skill."
+  ],
+  "motivational_note": "Your love of hiking shows you value real‑world exploration—let that curiosity guide you as you turn your hands‑on design passion into a career that shapes spaces people love to inhabit."
+}
