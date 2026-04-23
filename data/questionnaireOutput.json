@@ -1,0 +1,34 @@
+{
+  "user_profile": {
+    "curiosity_domain": "Business",
+    "experience_level": "Steady",
+    "business_interests": ["Marketplace"],
+    "target_region": "MENA",
+    "founder_setup": "Solo",
+    "risk_tolerance": "I'm comfortable with moderate risk if there's growth potential"
+  },
+  "career_profile": {
+    "free_day_preferences": [
+      "Learn something new",
+      "Organize or plan something"
+    ],
+    "preferred_work_types": [
+      "Working with ideas",
+      "Leading others",
+      "Working independently"
+    ],
+    "problem_solving_styles": [
+      "Business or money-related challenges",
+      "Organizing or improving systems"
+    ],
+    "preferred_work_environments": [
+      "Office",
+      "Fast-paced environment"
+    ],
+    "desired_impact": [
+      "Make strong income",
+      "Lead organizations",
+      "Teach or share knowledge"
+    ]
+  }
+}

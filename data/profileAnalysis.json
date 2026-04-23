@@ -1,0 +1,52 @@
+{
+  "personality_insights": {
+    "type": "Strategic Operator",
+    "motivation": "Financial Growth and Leadership",
+    "traits": [
+      "Organized",
+      "Goal-oriented",
+      "Independent"
+    ],
+    "strengths": [
+      "Strategic Thinking",
+      "Problem Solving",
+      "Leadership"
+    ],
+    "weaknesses": [
+      "Overemphasis on Planning",
+      "Potential for Risk Aversion"
+    ]
+  },
+  "founder_profile": {
+    "experience_level": "Intermediate",
+    "execution_style": "Independent Operator",
+    "risk_level": "Moderate",
+    "readiness": "Advanced",
+    "skill_level_summary": "Highly Skilled in Business Operations",
+    "key_skill_gaps": [
+      "Technical Skills",
+      "Creative Problem Solving"
+    ]
+  },
+  "recommended_industries": [
+    "E-commerce",
+    "Marketplace Platforms",
+    "Business Services"
+  ],
+  "recommended_problem_spaces": [
+    "Streamlining Operational Processes",
+    "Improving Supply Chain Efficiency",
+    "Enhancing Customer Experience"
+  ],
+  "search_direction": {
+    "keywords": [
+      "MENA e-commerce growth",
+      "Marketplace platform development",
+      "Operational efficiency in business services"
+    ]
+  },
+  "system_flags": {
+    "needs_guidance": false,
+    "should_suggest_learning": true
+  }
+}

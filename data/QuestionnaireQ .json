@@ -1,0 +1,145 @@
+[
+  {
+    "field": "Q_q1_Curiosity_domain",
+    "question": "What sparcks your Curiosity?",
+    "multi": false,
+    "choices": [
+      "Technology",
+      "Business",
+      "Art&Design",
+      "Social Impact",
+      "Healthcare",
+      "Education",
+      "Food&Bev",
+      "Other (please specify)",
+      "I don't know yet"
+    ]
+  },
+  {
+    "field": "Q_q2_Experience_level",
+    "question": "Tell us about your self?",
+    "multi": false,
+    "choices": [
+      "Beginner (Just starting to learn about entrepreneurship)",
+      "Steady (I have an idea and I'm ready to build Business)",
+      "Growth-Seeker (My veture is lauched and I'm foused on scaling)"
+    ]
+  },
+  {
+    "field": "Q_q3_Business_type",
+    "question": "What type(s) of Business are you most interested in?",
+    "multi": true,
+    "choices": [
+      "E-commerce",
+      "Marketplace"
+    ]
+  },
+  {
+    "field": "Q_q4_Target_market",
+    "question": "What region or country will the Business operate in?",
+    "multi": false,
+    "choices": [
+      "Egypt",
+      "MENA",
+      "Global"
+    ]
+  },
+  {
+    "field": "Q_q5_founder_setup",
+    "question": "How do you plan to set up your Business?",
+    "multi": false,
+    "choices": [
+      "Solo (I want to start and run the Business on my own)",
+      "Co-founder (I want to start the Business with one or more partners)"
+    ]
+  },
+  {
+    "field": "Q_q6_risk_tolerance",
+    "question": "How comfortable are you with uncertainty and risk in your career?",
+    "multi": false,
+    "choices": [
+      "I prefer stability and predictable outcomes",
+      "I'm comfortable with moderate risk if there's growth potential",
+      "I enjoy taking calculated risks",
+      "I thrive in high-risk, high-reward situations"
+    ]
+  },
+  {
+    "field": "career_q1_free_day",
+    "label": "Career Q1",
+    "question": "If you had a completely free day, what would you most likely choose to do?",
+    "multi": true,
+    "choices": [
+      "Build or create something",
+      "Learn something new",
+      "Solve a problem",
+      "Help someone",
+      "Design or express ideas",
+      "Work with technology",
+      "Organize or plan something"
+    ]
+  },
+  {
+    "field": "career_q2_work_type",
+    "label": "Career Q2",
+    "question": "What type of work do you enjoy the most?",
+    "multi": true,
+    "choices": [
+      "Working with people",
+      "Working with ideas",
+      "Working with technology",
+      "Creative work (design, writing, media)",
+      "Hands-on physical work",
+      "Analyzing data",
+      "Leading others",
+      "Working independently"
+    ]
+  },
+  {
+    "field": "career_q3_problem_type",
+    "label": "Career Q3",
+    "question": "What kind of problems do you naturally enjoy solving?",
+    "multi": true,
+    "choices": [
+      "Logical or technical problems",
+      "Creative challenges",
+      "Real-life practical issues",
+      "Helping people with personal problems",
+      "Organizing or improving systems",
+      "Business or money-related challenges"
+    ]
+  },
+  {
+    "field": "career_q4_environment",
+    "label": "Career Q4",
+    "question": "What type of work environment suits you best?",
+    "multi": true,
+    "choices": [
+      "Office",
+      "Lab",
+      "Creative studio",
+      "Outdoors",
+      "Clinic or service setting",
+      "Workshop or production space",
+      "Remote / flexible",
+      "Fast-paced environment",
+      "Calm and structured environment"
+    ]
+  },
+  {
+    "field": "career_q5_impact",
+    "label": "Career Q5",
+    "question": "What kind of impact do you want to have in your career?",
+    "multi": true,
+    "choices": [
+      "Help people",
+      "Build products",
+      "Innovate new ideas",
+      "Make strong income",
+      "Protect the environment",
+      "Teach or share knowledge",
+      "Lead organizations",
+      "Entertain or inspire others"
+    ]
+  }
+]
