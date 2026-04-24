@@ -26,7 +26,7 @@ load_dotenv()
 # Configuration
 # ─────────────────────────────────────────────
 GROQ_API_KEY  = os.getenv("GROQ_API_KEY")
-GROQ_API_BASE = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
+GROQ_API_BASE = os.getenv("GROQ_API_BASE")
 GROQ_MODEL    = os.getenv("GROQ_MODEL", "llama3-70b-8192")
 GROQ_FALLBACK_MODEL = os.getenv("GROQ_FALLBACK_MODEL", "llama-3.3-70b-versatile")
 REQUEST_TIMEOUT = 60
