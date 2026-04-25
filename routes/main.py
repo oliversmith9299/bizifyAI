@@ -189,3 +189,67 @@ def get_questionnaire(user_id: str, db=Depends(get_db)):
 @router.get("/version-check")
 def version_check():
     return {"version": "NEW_CODE_123"}
+
+
+#────────────────────────────────────────────────────────────────────────────
+@router.get("/profile/{user_id}", dependencies=[Depends(verify_api_key)])
+def get_profile(user_id: str, db=Depends(get_db)):
+    profile = crud.get_profile(db, user_id)
+
+    if not profile:
+        raise HTTPException(status_code=425, detail="Profile not ready yet")
+
+    return {
+        "user_id": user_id,
+        "profile_analysis": profile.data
+    }
+
+
+#────────────────────────────────────────────────────────────────────────────
+
+@router.get("/problems/{user_id}", dependencies=[Depends(verify_api_key)])
+def get_problems(user_id: str, db=Depends(get_db)):
+    problems = crud.get_problems(db, user_id)
+
+    if not problems:
+        raise HTTPException(status_code=425, detail="Problems not ready yet")
+
+    return {
+        "user_id": user_id,
+        "problems": problems.data
+    }
+#────────────────────────────────────────────────────────────────────────────
+@router.post("/rerun/profile/{user_id}", dependencies=[Depends(verify_api_key)])
+def rerun_profile(user_id: str, db=Depends(get_db)):
+    from agents.PipelineRunner import run_profile_analysis
+
+    questionnaire_row = crud.get_questionnaire_output(db, user_id)
+
+    if not questionnaire_row:
+        raise HTTPException(404, "No questionnaire")
+
+    data = questionnaire_row.data
+    skills = data.get("skills", [])
+
+    profile = run_profile_analysis(data, skills)
+
+    crud.save_profile(db, user_id, profile)
+
+    return {"status": "profile regenerated"}
+
+#────────────────────────────────────────────────────────────────────────────
+@router.post("/rerun/problems/{user_id}", dependencies=[Depends(verify_api_key)])
+def rerun_problems(user_id: str, db=Depends(get_db)):
+    from agents.PipelineRunner import run_problem_discovery
+
+    profile = crud.get_profile(db, user_id)
+    questionnaire = crud.get_questionnaire_output(db, user_id)
+
+    if not profile or not questionnaire:
+        raise HTTPException(400, "Missing data")
+
+    problems = run_problem_discovery(profile.data, questionnaire.data)
+
+    crud.save_problems(db, user_id, problems)
+
+    return {"status": "problems regenerated"}
