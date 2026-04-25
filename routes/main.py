@@ -8,10 +8,11 @@ from pydantic import BaseModel
 
 from db.connection import get_db
 from db import crud
+from routes.main import router as pipeline_router
 
 router = APIRouter(prefix="/pipeline", tags=["AI Pipeline"])
 
-API_SECRET_KEY = os.getenv("API_SECRET_KEY", "change-this-secret")
+API_SECRET_KEY = os.getenv("API_SECRET_KEY", "7f986c28-88d1-424d-8622-776ffaff3452")
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 def verify_api_key(x_api_key: str = Header(...)):
@@ -42,6 +43,8 @@ def build_questionnaire_payload(data: QuestionnaireInput) -> Dict[str, Any]:
 def health():
     return {"status": "ok", "timestamp": int(time.time())}
 
+#----------------------------------------------------------------
+
 @router.post("/run", dependencies=[Depends(verify_api_key)])
 async def run_pipeline(
     data: QuestionnaireInput,
@@ -53,6 +56,8 @@ async def run_pipeline(
     Backend sends all questionnaire data -> we save it -> run pipeline in background.
     """
     questionnaire = build_questionnaire_payload(data)
+
+    crud.save_questionnaire_output(db, data.user_id, questionnaire)
 
     # Mark as pending in DB
     crud.upsert_pipeline_status(db, data.user_id, "pending")
@@ -68,6 +73,9 @@ async def run_pipeline(
         "poll_url": f"/pipeline/status/{data.user_id}",
     })
 
+
+
+#---------------------------------------------------------------------------------------
 @router.get("/status/{user_id}", dependencies=[Depends(verify_api_key)])
 def get_status(user_id: str, db=Depends(get_db)):
     """Poll this after /pipeline/run."""
@@ -85,6 +93,8 @@ def get_status(user_id: str, db=Depends(get_db)):
         "error": run.error,
     }
 
+
+#--------------------------------------------------------------------------------
 @router.get("/idea/{user_id}", dependencies=[Depends(verify_api_key)])
 def get_idea(user_id: str, db=Depends(get_db)):
     """Get the generated idea and chat history for a user."""
@@ -98,6 +108,7 @@ def get_idea(user_id: str, db=Depends(get_db)):
         "chat_history": idea.chat_history or [],
     }
 
+#--------------------------------------------------------------------------------
 @router.post("/chat", dependencies=[Depends(verify_api_key)])
 def chat(data: ChatInput, db=Depends(get_db)):
     """
@@ -161,3 +172,20 @@ def chat(data: ChatInput, db=Depends(get_db)):
         "reply": reply,
         "chat_history_length": len(existing_history),
     }
+
+#────────────────────────────────────────────────────────────────────────────
+@router.get("/questionnaire/{user_id}", dependencies=[Depends(verify_api_key)])
+def get_questionnaire(user_id: str, db=Depends(get_db)):
+    row = crud.get_questionnaire_output(db, user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="No questionnaire found")
+    
+    return {
+        "user_id": user_id,
+        "questionnaire": row.data
+    }
+
+#────────────────────────────────────────────────────────────────────────────
+@router.get("/version-check")
+def version_check():
+    return {"version": "NEW_CODE_123"}

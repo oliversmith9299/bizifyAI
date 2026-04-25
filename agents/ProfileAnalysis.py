@@ -12,6 +12,8 @@ import os
 import json
 from dotenv import load_dotenv
 from openai import OpenAI
+from db.connection import SessionLocal
+from db import crud
 #
 
 # -------------------------
@@ -20,7 +22,7 @@ from openai import OpenAI
 load_dotenv()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_API_BASE = os.getenv("GROQ_API_BASE")
+GROQ_API_BASE = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-70b-8192")
 
 if not GROQ_API_KEY:
@@ -39,24 +41,14 @@ client = OpenAI(
 # -------------------------
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 
-Q_PATH = os.path.join(BASE_DIR, "data", "questionnaireOutput.json")
-PROFILE_PATH = os.path.join(BASE_DIR, "data", "skills.json")
 OUTPUT_PATH = os.path.join(BASE_DIR, "data", "profileAnalysis.json")
 
 # -------------------------
 # Load data
 # -------------------------
-with open(Q_PATH, "r") as f:
-    questionnaire = json.load(f)
+db = SessionLocal()
 
-with open(PROFILE_PATH, "r") as f:
-    skills = json.load(f)
-
-# Merge data
-combined_data = {
-    "questionnaire": questionnaire,
-    "skills": skills
-}
+questionnaire = crud.get_questionnaire_output_json(db, user_id)
 
 # -------------------------
 # Prompt (UPDATED)
