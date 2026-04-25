@@ -142,7 +142,7 @@ def chat(data: ChatInput, db=Depends(get_db)):
     )
 
     # 4. Generate AI Reply
-    from agents.PipelineRunner import get_groq_client, GROQ_MODEL, IDEA_SYSTEM_PROMPT
+    from agents.PipelineRunner import groq_client, GROQ_MODEL, IDEA_SYSTEM_PROMPT
     
     existing_history = idea_row.chat_history or []
     messages = [
@@ -152,7 +152,7 @@ def chat(data: ChatInput, db=Depends(get_db)):
         {"role": "user", "content": data.message}
     ]
 
-    response = get_groq_client().chat.completions.create(
+    response = groq_client().chat.completions.create(
         model=GROQ_MODEL,
         messages=messages,
         temperature=0.4,
