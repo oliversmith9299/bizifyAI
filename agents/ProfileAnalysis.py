@@ -190,5 +190,3 @@ OUTPUT FORMAT
 
     finally:
         db.close()
-    
-
