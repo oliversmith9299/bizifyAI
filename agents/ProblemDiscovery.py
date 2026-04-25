@@ -41,7 +41,7 @@ log = logging.getLogger(__name__)
 load_dotenv()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_API_BASE = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
+GROQ_API_BASE = os.getenv("GROQ_API_BASE")
 # FIX: Use llama-3.3-70b-versatile — 128k context window vs llama3-70b-8192's 8k
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 SERPER_API_KEY = os.getenv("SERPER_API_KEY")
