@@ -184,3 +184,8 @@ def get_questionnaire(user_id: str, db=Depends(get_db)):
         "user_id": user_id,
         "questionnaire": row.data
     }
+
+#────────────────────────────────────────────────────────────────────────────
+@router.get("/version-check")
+def version_check():
+    return {"version": "NEW_CODE_123"}
