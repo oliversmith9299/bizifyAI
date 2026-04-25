@@ -12,7 +12,7 @@ from db import crud
 
 router = APIRouter(prefix="/pipeline", tags=["AI Pipeline"])
 
-API_SECRET_KEY = os.getenv("API_SECRET_KEY")
+API_SECRET_KEY = os.getenv("API_SECRET_KEY", "dev-key")
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 def verify_api_key(x_api_key: str = Header(...)):
@@ -152,7 +152,7 @@ def chat(data: ChatInput, db=Depends(get_db)):
         {"role": "user", "content": data.message}
     ]
 
-    response = groq_client().chat.completions.create(
+    response = groq_client.chat.completions.create(
         model=GROQ_MODEL,
         messages=messages,
         temperature=0.4,
