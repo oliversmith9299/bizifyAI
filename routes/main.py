@@ -54,9 +54,6 @@ async def run_pipeline(
     """
     questionnaire = build_questionnaire_payload(data)
 
-    # Store full questionnaire output (including skills) for future context rebuilds
-    crud.save_questionnaire_output(db, data.user_id, questionnaire)
-
     # Mark as pending in DB
     crud.upsert_pipeline_status(db, data.user_id, "pending")
 
@@ -134,7 +131,7 @@ def chat(data: ChatInput, db=Depends(get_db)):
     )
 
     # 4. Generate AI Reply
-    from agents.PipelineRunner import groq_client, GROQ_MODEL, IDEA_SYSTEM_PROMPT
+    from agents.PipelineRunner import get_groq_client, GROQ_MODEL, IDEA_SYSTEM_PROMPT
     
     existing_history = idea_row.chat_history or []
     messages = [
@@ -144,7 +141,7 @@ def chat(data: ChatInput, db=Depends(get_db)):
         {"role": "user", "content": data.message}
     ]
 
-    response = groq_client.chat.completions.create(
+    response = get_groq_client().chat.completions.create(
         model=GROQ_MODEL,
         messages=messages,
         temperature=0.4,
