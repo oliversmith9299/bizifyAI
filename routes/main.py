@@ -12,7 +12,7 @@ from routes.main import router as pipeline_router
 
 router = APIRouter(prefix="/pipeline", tags=["AI Pipeline"])
 
-API_SECRET_KEY = os.getenv("API_SECRET_KEY", "7f986c28-88d1-424d-8622-776ffaff3452")
+API_SECRET_KEY = os.getenv("API_SECRET_KEY")
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 def verify_api_key(x_api_key: str = Header(...)):
