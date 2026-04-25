@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from db.connection import SessionLocal
 from db import crud
+
 #
 
 # -------------------------
@@ -37,25 +38,18 @@ client = OpenAI(
 )
 
 # -------------------------
-# Paths
-# -------------------------
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+def run_profile_analysis(user_id: str):
+    db = SessionLocal()
+    print(f"[ProfileAnalysis] Running for user {user_id}")
 
-OUTPUT_PATH = os.path.join(BASE_DIR, "data", "profileAnalysis.json")
+    try:
+        questionnaire = crud.get_questionnaire_output_json(db, user_id)
 
-# -------------------------
-# Load data
-# -------------------------
-db = SessionLocal()
-
-questionnaire = crud.get_questionnaire_output_json(db, user_id)
-
-# -------------------------
-# Prompt (UPDATED)
-# -------------------------
+        if not questionnaire:
+            raise ValueError("No questionnaire found")
 
 
-prompt = f"""
+        prompt = f"""
 You are a senior startup advisor and venture builder.
 
 Your task is to deeply analyze a user and determine what kind of business they can realistically build.
@@ -69,7 +63,7 @@ You MUST:
 -------------------------
 INPUT DATA
 -------------------------
-{json.dumps(combined_data, indent=2)}
+{json.dumps(questionnaire, indent=2)}
 
 -------------------------
 ANALYSIS INSTRUCTIONS
@@ -160,43 +154,41 @@ OUTPUT FORMAT
 }}
 """
 
-# -------------------------
-# Call Groq
-# -------------------------
-response = client.chat.completions.create(
-    model=GROQ_MODEL,
-    messages=[
-        {"role": "system", "content": "Return ONLY valid JSON. No explanation."},
-        {"role": "user", "content": prompt}
-    ],
-    temperature=0.7,
-)
 
-raw_output = response.choices[0].message.content
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": "Return ONLY valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+        )
 
-# -------------------------
-# Parse JSON
-# -------------------------
-try:
-    # Strip markdown code fences if present (e.g. ```json ... ``` or ``` ... ```)
-    cleaned = raw_output.strip()
-    if cleaned.startswith("```"):
-        parts = cleaned.split("```")
-        # parts[1] is the content between first and last fence
-        cleaned = parts[1].strip()
-        # Remove optional language tag (e.g. "json")
-        if cleaned.lower().startswith("json"):
-            cleaned = cleaned[4:].strip()
-    result = json.loads(cleaned)
-except Exception as e:
-    print("⚠️ JSON parse failed. Raw output:")
-    print(raw_output)
-    raise
+        raw_output = response.choices[0].message.content
 
-# -------------------------
-# Save result
-# -------------------------
-with open(OUTPUT_PATH, "w") as f:
-    json.dump(result, f, indent=2)
+        # clean
+        cleaned = raw_output.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("```")[1].strip()
+            if cleaned.lower().startswith("json"):
+                cleaned = cleaned[4:].strip()
 
-print("✅ profileAnalysis.json created using skills + questionnaire")
+        try:
+            result = json.loads(cleaned)
+
+            crud.save_profile(db, user_id, result)
+
+            print(f"[ProfileAnalysis] Profile saved for user {user_id}")
+
+            return result
+
+        except Exception as e:
+            print("ProfileAnalysis Error:", str(e))
+            raise 
+
+        
+
+    finally:
+        db.close()
+    
+
