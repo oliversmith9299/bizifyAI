@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from db.connection import get_db
 from db import crud
-from routes.main import router as pipeline_router
+
 
 router = APIRouter(prefix="/pipeline", tags=["AI Pipeline"])
 
