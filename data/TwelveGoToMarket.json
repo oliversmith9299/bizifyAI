@@ -1,0 +1,23 @@
+{
+  "target_launch_segment": "",
+  "positioning_message": "",
+  "marketing_channels": [
+    {
+      "channel": "",
+      "why_it_fits": "",
+      "first_experiment": "",
+      "success_metric": ""
+    }
+  ],
+  "funnel": {
+    "awareness": [],
+    "activation": [],
+    "conversion": [],
+    "retention": []
+  },
+  "first_100_customers_plan": [],
+  "launch_timeline": [],
+  "cac_tracking_plan": "",
+  "feedback_loops": [],
+  "summary_insight": ""
+}

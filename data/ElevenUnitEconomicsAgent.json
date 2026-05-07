@@ -1,0 +1,18 @@
+{
+  "revenue_model": "",
+  "pricing_assumptions": [],
+  "cost_assumptions": [],
+  "unit_economics": {
+    "average_revenue_per_user": "",
+    "gross_margin": "",
+    "customer_acquisition_cost": "",
+    "lifetime_value": "",
+    "ltv_cac_ratio": "",
+    "payback_period": "",
+    "break_even_point": ""
+  },
+  "pricing_tests": [],
+  "financial_risks": [],
+  "viability_rating": "strong|moderate|weak",
+  "summary_insight": ""
+}

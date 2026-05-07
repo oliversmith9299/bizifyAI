@@ -39,3 +39,10 @@ class IdeaResult(Base):
     current_idea = Column(Text, nullable=True)
     chat_history = Column(JSON, default=list)
     updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class IdeaIntakeResult(Base):
+    __tablename__ = "idea_intake_results"
+    user_id      = Column(String, primary_key=True)
+    data         = Column(JSON, nullable=False)
+    created_at   = Column(DateTime, default=datetime.utcnow)
+    updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

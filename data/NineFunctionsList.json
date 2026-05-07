@@ -1,0 +1,21 @@
+{
+  "must_have_functions": [
+    {
+      "function_name": "",
+      "purpose": "",
+      "user_problem_addressed": "",
+      "priority": "high|medium|low"
+    }
+  ],
+  "nice_to_have_functions": [],
+  "future_capabilities": [],
+  "differentiation_features": [],
+  "excluded_features": [
+    {
+      "feature_name": "",
+      "reason_to_exclude": ""
+    }
+  ],
+  "mvp_feature_recommendation": [],
+  "summary_insight": ""
+}
