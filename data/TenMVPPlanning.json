@@ -1,0 +1,20 @@
+{
+  "mvp_goal": "",
+  "riskiest_assumptions": [],
+  "mvp_scope": {
+    "included": [],
+    "excluded": []
+  },
+  "core_user_flows": [],
+  "build_plan": [
+    {
+      "milestone": "",
+      "tasks": [],
+      "success_criteria": ""
+    }
+  ],
+  "testing_plan": [],
+  "qa_checklist": [],
+  "launch_criteria": [],
+  "summary_insight": ""
+}

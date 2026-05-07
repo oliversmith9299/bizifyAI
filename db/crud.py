@@ -1,5 +1,5 @@
 from datetime import datetime
-from db.models import IdeaResult, PipelineRun, ProfileResult, ProblemsResult, QuestionnaireOutput
+from db.models import IdeaIntakeResult, IdeaResult, PipelineRun, ProfileResult, ProblemsResult, QuestionnaireOutput
 
 # ── Helper for safe commits (FIX 2 & 3) ───────────────────────────────────────
 def safe_commit(db, row):
@@ -72,6 +72,24 @@ def save_problems(db, user_id: str, data: dict):
 
 def get_problems(db, user_id: str):
     return db.query(ProblemsResult).filter_by(user_id=user_id).first()
+
+# ── Idea Intake ───────────────────────────────────────────────────────────────
+def save_idea_intake(db, user_id: str, data: dict):
+    row = db.query(IdeaIntakeResult).filter_by(user_id=user_id).first()
+    if not row:
+        row = IdeaIntakeResult(user_id=user_id)
+        db.add(row)
+
+    row.data = data
+    row.updated_at = datetime.utcnow()
+    return safe_commit(db, row)
+
+def get_idea_intake(db, user_id: str):
+    return db.query(IdeaIntakeResult).filter_by(user_id=user_id).first()
+
+def get_idea_intake_json(db, user_id: str):
+    row = get_idea_intake(db, user_id)
+    return row.data if row else None
 
 # ── Idea ──────────────────────────────────────────────────────────────────────
 def save_idea(db, user_id: str, idea: str, history: list):

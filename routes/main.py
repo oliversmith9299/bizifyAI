@@ -1,6 +1,6 @@
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
 from fastapi.responses import JSONResponse
@@ -29,6 +29,14 @@ class QuestionnaireInput(BaseModel):
 class ChatInput(BaseModel):
     user_id: str
     message: str
+
+class IdeaIntakeInput(BaseModel):
+    user_id: str
+    message: str
+    history: List[Dict[str, Any]] = []
+
+class UserIdInput(BaseModel):
+    user_id: str
 
 def build_questionnaire_payload(data: QuestionnaireInput) -> Dict[str, Any]:
     return {
@@ -140,6 +148,12 @@ def chat(data: ChatInput, db=Depends(get_db)):
         stored_questionnaire, # Pass FULL saved questionnaire
         skills
     )
+    intake_row = crud.get_idea_intake(db, data.user_id)
+    if intake_row:
+        context += (
+            "\n\n=== USER ORIGINAL IDEA INTAKE ===\n"
+            f"{intake_row.data}"
+        )
 
     # 4. Generate AI Reply
     from agents.PipelineRunner import groq_client, GROQ_MODEL, IDEA_SYSTEM_PROMPT
@@ -253,3 +267,169 @@ def rerun_problems(user_id: str, db=Depends(get_db)):
     crud.save_problems(db, user_id, problems)
 
     return {"status": "problems regenerated"}
+
+
+# ── Returning-user flow: Idea Intake ─────────────────────────────────────────
+
+@router.post("/idea-intake", dependencies=[Depends(verify_api_key)])
+def idea_intake(data: IdeaIntakeInput):
+    """
+    Returning-user flow — step 1.
+    POST the user's raw idea (and optionally a clarification history).
+    Returns structured intake data when clear, or asks clarifying questions.
+    """
+    from agents.ThreeIdeaIntakeAgent import run_idea_intake
+
+    result = run_idea_intake(
+        user_id=data.user_id,
+        user_message=data.message,
+        history=data.history,
+    )
+
+    return {"user_id": data.user_id, **result}
+
+
+@router.post("/idea-intake/run-problems", dependencies=[Depends(verify_api_key)])
+def idea_intake_run_problems(user_id: str, background_tasks: BackgroundTasks, db=Depends(get_db)):
+    """
+    Returning-user flow — step 2.
+    Call this after idea-intake returns status=ready.
+    Runs ProblemDiscovery in the background using the structured intake.
+    """
+    intake_row = crud.get_idea_intake(db, user_id)
+    if not intake_row or intake_row.data.get("_status") == "pending_clarification":
+        raise HTTPException(status_code=425, detail="Idea intake not ready. Complete /idea-intake first.")
+
+    intake = intake_row.data
+
+    crud.upsert_pipeline_status(db, user_id, "pending")
+
+    async def _run(uid: str, intake_data: dict):
+        from agents.ThreeIdeaIntakeAgent import (
+            _build_profile_for_problem_discovery,
+            _build_questionnaire_for_problem_discovery,
+        )
+        from agents.PipelineRunner import run_problem_discovery
+        from db.connection import get_session
+
+        profile_compat       = _build_profile_for_problem_discovery(intake_data)
+        questionnaire_compat = _build_questionnaire_for_problem_discovery(intake_data)
+
+        try:
+            with get_session() as s:
+                crud.upsert_pipeline_status(s, uid, "running", "problem_discovery")
+
+            problems = run_problem_discovery(profile_compat, questionnaire_compat)
+
+            with get_session() as s:
+                crud.save_problems(s, uid, problems)
+                crud.upsert_pipeline_status(s, uid, "problems_done", "idea_chat_start")
+
+        except Exception as e:
+            try:
+                with get_session() as s:
+                    crud.upsert_pipeline_status(s, uid, "error", None, str(e))
+            except Exception:
+                pass
+
+    background_tasks.add_task(_run, user_id, intake)
+
+    return JSONResponse(status_code=202, content={
+        "user_id": user_id,
+        "status": "pending",
+        "message": "Problem discovery started. Poll /pipeline/status/{user_id} for progress.",
+        "poll_url": f"/pipeline/status/{user_id}",
+    })
+
+
+@router.post("/idea-intake/start-chat", dependencies=[Depends(verify_api_key)])
+def idea_intake_start_chat(data: UserIdInput, db=Depends(get_db)):
+    """
+    Returning-user flow - step 3.
+    Bridges IdeaIntake + ProblemDiscovery into the existing idea chat.
+    Saves compatibility profile/questionnaire rows so /pipeline/chat can continue normally.
+    """
+    intake_row = crud.get_idea_intake(db, data.user_id)
+    problems_row = crud.get_problems(db, data.user_id)
+
+    if not intake_row or intake_row.data.get("_status") == "pending_clarification":
+        raise HTTPException(status_code=425, detail="Idea intake is not ready yet.")
+    if not problems_row:
+        raise HTTPException(status_code=425, detail="Problem discovery is not ready yet.")
+
+    intake = intake_row.data
+
+    from agents.ThreeIdeaIntakeAgent import (
+        _build_profile_for_problem_discovery,
+        _build_questionnaire_for_problem_discovery,
+    )
+    from agents.PipelineRunner import _build_context, groq_client, GROQ_MODEL, IDEA_SYSTEM_PROMPT
+
+    profile_compat = _build_profile_for_problem_discovery(intake)
+    questionnaire_compat = _build_questionnaire_for_problem_discovery(intake)
+    questionnaire_compat["skills"] = []
+
+    crud.save_profile(db, data.user_id, profile_compat)
+    crud.save_questionnaire_output(db, data.user_id, questionnaire_compat)
+
+    context = _build_context(
+        profile_compat,
+        problems_row.data,
+        questionnaire_compat,
+        [],
+    )
+    context += (
+        "\n\n=== USER ORIGINAL IDEA INTAKE ===\n"
+        f"Idea summary: {intake.get('idea_summary', '')}\n"
+        f"Target users: {intake.get('target_users', [])}\n"
+        f"Industry: {intake.get('industry', '')}\n"
+        f"Problem assumption: {intake.get('problem_assumption', '')}\n"
+        f"Solution assumption: {intake.get('solution_assumption', '')}\n"
+        f"Business model: {intake.get('business_model', '')}\n"
+        f"Region: {intake.get('region', 'Global')}\n"
+    )
+
+    opening = (
+        "The user already has this startup idea. Do not generate a random new idea. "
+        "Use the original idea intake and discovered problems to refine it into the exact idea format. "
+        "Point out the strongest real problem to solve and how the user should adjust the idea."
+    )
+
+    messages = [
+        {"role": "system", "content": IDEA_SYSTEM_PROMPT},
+        {"role": "system", "content": context},
+        {"role": "user", "content": opening},
+    ]
+
+    response = groq_client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=messages,
+        temperature=0.4,
+        max_tokens=1000,
+    )
+    reply = response.choices[0].message.content.strip()
+
+    history = [
+        {"role": "user", "content": opening},
+        {"role": "assistant", "content": reply},
+    ]
+    crud.save_idea(db, data.user_id, reply, history)
+    crud.upsert_pipeline_status(db, data.user_id, "done", None)
+
+    return {
+        "user_id": data.user_id,
+        "status": "done",
+        "current_idea": reply,
+        "chat_history": history,
+        "message": "Idea chat is ready. Continue with /pipeline/chat.",
+    }
+
+
+@router.get("/idea-intake/{user_id}", dependencies=[Depends(verify_api_key)])
+def get_idea_intake(user_id: str, db=Depends(get_db)):
+    """Get the saved idea intake for a returning user."""
+    row = crud.get_idea_intake(db, user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="No idea intake found for this user.")
+
+    return {"user_id": user_id, "intake": row.data}

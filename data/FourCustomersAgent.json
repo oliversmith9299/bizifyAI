@@ -1,0 +1,27 @@
+{
+  "target_audiences": [
+    {
+      "segment_name": "",
+      "description": "",
+      "pain_points": [],
+      "jobs_to_be_done": [],
+      "buying_motivation": "",
+      "urgency_level": "high|medium|low",
+      "access_channels": []
+    }
+  ],
+  "primary_customer": {
+    "segment_name": "",
+    "why_primary": "",
+    "early_adopter_traits": []
+  },
+  "catwoe_analysis": {
+    "customers": [],
+    "actors": [],
+    "transformation": "",
+    "worldview": "",
+    "owner": "",
+    "environmental_constraints": []
+  },
+  "summary_insight": ""
+}

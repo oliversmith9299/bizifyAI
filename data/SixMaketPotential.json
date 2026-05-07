@@ -1,0 +1,34 @@
+{
+  "market_definition": {
+    "industry": "",
+    "region": "",
+    "target_customer": ""
+  },
+  "tam_sam_som": {
+    "tam": {
+      "estimate": "",
+      "reasoning": ""
+    },
+    "sam": {
+      "estimate": "",
+      "reasoning": ""
+    },
+    "som": {
+      "estimate": "",
+      "reasoning": ""
+    }
+  },
+  "market_trends": [],
+  "growth_drivers": [],
+  "barriers": [],
+  "pestel_analysis": {
+    "political": "",
+    "economic": "",
+    "social": "",
+    "technological": "",
+    "environmental": "",
+    "legal": ""
+  },
+  "market_attractiveness": "high|medium|low",
+  "summary_insight": ""
+}
