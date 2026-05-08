@@ -1,7 +1,7 @@
-#2 problem discovery agent
-#What this agent should do
-#1. Receive structured profile + keywords from ProfileAnalysis and IdeaIntake.
-#2. Run Google searches with strong queries based on the keywords.
+# NOTE: This is the standalone CLI version of ProblemDiscovery.
+# The FastAPI pipeline uses agents/PipelineRunner.run_problem_discovery instead,
+# which has more features (B2B guard, curiosity-domain templates, region modifiers).
+# Keep the two in sync when changing the output schema.
 
 import os
 import json
@@ -12,6 +12,7 @@ from typing import Dict, List
 from dotenv import load_dotenv
 from openai import OpenAI
 from bs4 import BeautifulSoup
+from agents.utils import parse_llm_json
 
 
 # ─────────────────────────────────────────────────────────
@@ -150,13 +151,6 @@ def call_llm(prompt: str, sources: list) -> str:
     return response.choices[0].message.content.strip()
 
 
-def safe_json(raw: str) -> dict:
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-
-    return json.loads(raw.strip())
 
 
 # ─────────────────────────────────────────────────────────
@@ -216,7 +210,7 @@ Return JSON with problems.
 """
 
     raw = call_llm(prompt, enriched)
-    result = safe_json(raw)
+    result = parse_llm_json(raw)
 
     # ── SCORING ────────────────────────
     for p in result.get("problems", []):

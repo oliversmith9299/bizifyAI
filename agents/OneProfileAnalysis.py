@@ -8,12 +8,17 @@
 #  and also will be stored in the database to be used by the future agents in the flow.
 
 
+# NOTE: This is the standalone CLI version of ProfileAnalysis.
+# The FastAPI pipeline uses agents/PipelineRunner.run_profile_analysis instead.
+# Keep the two in sync when changing the prompt or output schema.
+
 import os
 import json
 from dotenv import load_dotenv
 from openai import OpenAI
 from db.connection import SessionLocal
 from db import crud
+from agents.utils import parse_llm_json
 
 #
 
@@ -164,17 +169,8 @@ OUTPUT FORMAT
             temperature=0.7,
         )
 
-        raw_output = response.choices[0].message.content
-
-        # clean
-        cleaned = raw_output.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("```")[1].strip()
-            if cleaned.lower().startswith("json"):
-                cleaned = cleaned[4:].strip()
-
         try:
-            result = json.loads(cleaned)
+            result = parse_llm_json(response.choices[0].message.content)
 
             crud.save_profile(db, user_id, result)
 
