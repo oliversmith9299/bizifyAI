@@ -70,9 +70,8 @@ async def run_pipeline(
     # Mark as pending in DB
     crud.upsert_pipeline_status(db, data.user_id, "pending")
 
-    # Import pipeline here to avoid circular dependencies if any
-    from agents.PipelineRunner import run_full_pipeline
-    background_tasks.add_task(run_full_pipeline, data.user_id, questionnaire, data.skills)
+    from orchestrator.orchestrator import run_new_user_pipeline
+    background_tasks.add_task(run_new_user_pipeline, data.user_id, questionnaire, data.skills)
 
     return JSONResponse(status_code=202, content={
         "user_id": data.user_id,
@@ -97,6 +96,7 @@ def get_status(user_id: str, db=Depends(get_db)):
         "current_step": run.current_step,
         "profile_ready":  crud.get_profile(db, user_id) is not None,
         "problems_ready": crud.get_problems(db, user_id) is not None,
+        "intake_ready":   crud.get_idea_intake(db, user_id) is not None,
         "idea_ready":     crud.get_idea(db, user_id) is not None,
         "error": run.error,
     }
@@ -138,14 +138,13 @@ def chat(data: ChatInput, db=Depends(get_db)):
         raise HTTPException(status_code=425, detail="Missing required context in DB to chat.")
 
     # 3. Rebuild context explicitly
-    from agents.PipelineRunner import _build_context
+    from agents.PipelineRunner import build_context
     stored_questionnaire = questionnaire_row.data
     skills = stored_questionnaire.get("skills", [])
 
-    context = _build_context(
-        profile_row.data,
+    context = build_context(
         problems_row.data,
-        stored_questionnaire, # Pass FULL saved questionnaire
+        stored_questionnaire,
         skills
     )
     intake_row = crud.get_idea_intake(db, data.user_id)
@@ -289,7 +288,7 @@ def idea_intake(data: IdeaIntakeInput):
     return {"user_id": data.user_id, **result}
 
 
-@router.post("/idea-intake/run-problems", dependencies=[Depends(verify_api_key)])
+@router.post("/idea-intake/run-problems/{user_id}", dependencies=[Depends(verify_api_key)])
 def idea_intake_run_problems(user_id: str, background_tasks: BackgroundTasks, db=Depends(get_db)):
     """
     Returning-user flow — step 2.
@@ -304,35 +303,8 @@ def idea_intake_run_problems(user_id: str, background_tasks: BackgroundTasks, db
 
     crud.upsert_pipeline_status(db, user_id, "pending")
 
-    async def _run(uid: str, intake_data: dict):
-        from agents.ThreeIdeaIntakeAgent import (
-            _build_profile_for_problem_discovery,
-            _build_questionnaire_for_problem_discovery,
-        )
-        from agents.PipelineRunner import run_problem_discovery
-        from db.connection import get_session
-
-        profile_compat       = _build_profile_for_problem_discovery(intake_data)
-        questionnaire_compat = _build_questionnaire_for_problem_discovery(intake_data)
-
-        try:
-            with get_session() as s:
-                crud.upsert_pipeline_status(s, uid, "running", "problem_discovery")
-
-            problems = run_problem_discovery(profile_compat, questionnaire_compat)
-
-            with get_session() as s:
-                crud.save_problems(s, uid, problems)
-                crud.upsert_pipeline_status(s, uid, "problems_done", "idea_chat_start")
-
-        except Exception as e:
-            try:
-                with get_session() as s:
-                    crud.upsert_pipeline_status(s, uid, "error", None, str(e))
-            except Exception:
-                pass
-
-    background_tasks.add_task(_run, user_id, intake)
+    from orchestrator.orchestrator import run_returning_user_pipeline
+    background_tasks.add_task(run_returning_user_pipeline, user_id, intake)
 
     return JSONResponse(status_code=202, content={
         "user_id": user_id,
@@ -363,7 +335,7 @@ def idea_intake_start_chat(data: UserIdInput, db=Depends(get_db)):
         _build_profile_for_problem_discovery,
         _build_questionnaire_for_problem_discovery,
     )
-    from agents.PipelineRunner import _build_context, groq_client, GROQ_MODEL, IDEA_SYSTEM_PROMPT
+    from agents.PipelineRunner import build_context, groq_client, GROQ_MODEL, IDEA_SYSTEM_PROMPT
 
     profile_compat = _build_profile_for_problem_discovery(intake)
     questionnaire_compat = _build_questionnaire_for_problem_discovery(intake)
@@ -372,8 +344,7 @@ def idea_intake_start_chat(data: UserIdInput, db=Depends(get_db)):
     crud.save_profile(db, data.user_id, profile_compat)
     crud.save_questionnaire_output(db, data.user_id, questionnaire_compat)
 
-    context = _build_context(
-        profile_compat,
+    context = build_context(
         problems_row.data,
         questionnaire_compat,
         [],

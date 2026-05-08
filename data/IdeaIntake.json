@@ -1,11 +1,21 @@
 {
-  "idea_summary": "",
-  "target_users": [],
-  "industry": "",
-  "problem_assumption": "",
-  "solution_assumption": "",
-  "business_model": "",
-  "region": "",
-  "keywords_for_problem_discovery": [],
+  "idea_summary": "A mobile app that connects university students who want to find compatible study partners based on subject, schedule, and learning style.",
+  "target_users": [
+    "Undergraduate students struggling to study alone",
+    "Postgraduate students looking for accountability partners",
+    "International students trying to integrate socially through academics"
+  ],
+  "industry": "EdTech",
+  "problem_assumption": "Students find it hard to discover study partners who match their subject, availability, and study pace, leading to isolation and poor academic performance.",
+  "solution_assumption": "A matching platform where students create a short profile (courses, free slots, study style) and get matched with compatible partners nearby or online.",
+  "business_model": "Freemium — basic matching is free, premium adds filters, video rooms, and progress tracking for a monthly subscription.",
+  "region": "MENA",
+  "keywords_for_problem_discovery": [
+    "study partner apps student engagement problems",
+    "university students studying alone mental health",
+    "peer learning platform challenges higher education",
+    "student collaboration tools reddit complaints",
+    "EdTech peer matching app pain points"
+  ],
   "unclear_questions": []
 }

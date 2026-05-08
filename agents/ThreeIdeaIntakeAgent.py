@@ -7,7 +7,6 @@
 # Multi-turn: if the idea is too vague, the agent asks 2-3 short clarification
 # questions and waits for answers before producing the structured output.
 
-import json
 import os
 
 from dotenv import load_dotenv
@@ -15,6 +14,7 @@ from openai import OpenAI
 
 from db.connection import SessionLocal
 from db import crud
+from agents.utils import parse_llm_json
 
 load_dotenv()
 
@@ -96,15 +96,6 @@ RULES:
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
-def _parse_llm_json(raw: str) -> dict:
-    cleaned = raw.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.split("```")[1].strip()
-        if cleaned.lower().startswith("json"):
-            cleaned = cleaned[4:].strip()
-    return json.loads(cleaned)
-
-
 def _build_profile_for_problem_discovery(intake: dict) -> dict:
     """Map IdeaIntake → the profile shape that run_problem_discovery expects."""
     return {
@@ -174,7 +165,7 @@ def run_idea_intake(user_id: str, user_message: str, history: list = None) -> di
         )
 
         raw    = response.choices[0].message.content
-        result = _parse_llm_json(raw)
+        result = parse_llm_json(raw)
 
         updated_history = history + [
             {"role": "user",      "content": user_message},

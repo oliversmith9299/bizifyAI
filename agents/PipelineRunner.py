@@ -1,31 +1,28 @@
 """
 agents/PipelineRunner.py
 ========================
-Background task — runs all 3 AI pipeline steps and saves to Supabase.
-Called by routes/main.py as a FastAPI BackgroundTask.
+Agent implementation library — individual AI functions used by the orchestrator.
 
-FIXES APPLIED:
-  1. Profile Analysis: curiosity_domain is now a PRIMARY keyword driver,
-     not a secondary shaper. Keywords are always domain-specific + region.
-  2. Problem Discovery: problems now match the founder's curiosity domain
-     (Art & Design), target CONSUMER pain points (not seller/B2B tooling),
-     and inject the full user_profile so the LLM has real context.
-  3. _build_context: risk constraint now checks for actual user phrase,
-     co-founder setup no longer wrongly triggers solo-only rule,
-     curiosity_domain and career_profile injected for richer idea context.
-  4. Idea generation opening prompt references Art & Design + co-founder
-     explicitly so the first idea is domain-matched.
+  run_profile_analysis()   → analyze questionnaire → founder profile JSON
+  run_problem_discovery()  → search web → real problems JSON
+  generate_opening_idea()  → LLM call → first idea text
+  build_context()         → build the constraint/problem context string for idea chat
+
+─── DO NOT put orchestration logic here ───────────────────────────────────────
+  Routing, flow control, and DB persistence live in orchestrator/orchestrator.py.
+  This file is the TOOLBOX. The orchestrator is the MANAGER.
 """
 
 import json
 import logging
 import os
-from typing import Dict, List
 
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from openai import OpenAI
 import requests as req
+
+from agents.utils import parse_llm_json
 
 load_dotenv()
 
@@ -37,10 +34,6 @@ GROQ_MODEL     = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 
 groq_client = OpenAI(api_key=GROQ_API_KEY, base_url=GROQ_API_BASE)
-
-# In-memory chat sessions per user
-# user_id → {"context": str, "history": list}
-_user_sessions: Dict[str, Dict] = {}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -121,12 +114,7 @@ Return ONLY valid JSON:
         temperature=0.5,  # lower = more deterministic, less likely to ignore instructions
         max_tokens=2000,
     )
-    raw = response.choices[0].message.content.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.lower().startswith("json"):
-            raw = raw[4:]
-    result = json.loads(raw.strip())
+    result = parse_llm_json(response.choices[0].message.content)
 
     # FIX 1b: Guarantee seeds are always present regardless of what the LLM did
     existing_kw = result.get("search_direction", {}).get("keywords", [])
@@ -306,13 +294,7 @@ Return ONLY valid JSON:
         temperature=0.5,
         max_tokens=8000,
     )
-    raw = response.choices[0].message.content.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.lower().startswith("json"):
-            raw = raw[4:]
-
-    result = json.loads(raw.strip())
+    result = parse_llm_json(response.choices[0].message.content)
     for p in result.get("problems", []):
         if p.get("source_type") == "profile_derived":
             p["validation_score"] = 35
@@ -354,7 +336,7 @@ Max 400 words per response unless user asks for detail.
 """
 
 
-def _build_context(profile: dict, problems: dict, questionnaire: dict, skills: list) -> str:
+def build_context(problems: dict, questionnaire: dict, skills: list) -> str:
     u = questionnaire.get("user_profile", {})
     career = questionnaire.get("career_profile", {})
 
@@ -419,116 +401,28 @@ def _build_context(profile: dict, problems: dict, questionnaire: dict, skills: l
     return "\n".join(c) + "\n\n" + "\n".join(p)
 
 
-def get_user_context(user_id: str) -> str:
-    """Get stored context for a user (used by /pipeline/chat route)."""
-    return _user_sessions.get(user_id, {}).get("context", "")
-
-
-def chat_with_idea_agent(user_id: str, message: str, context: str) -> str:
-    if user_id not in _user_sessions:
-        _user_sessions[user_id] = {"context": context, "history": []}
-
-    session = _user_sessions[user_id]
-    session["history"].append({"role": "user", "content": message})
-
-    messages = [
-        {"role": "system", "content": IDEA_SYSTEM_PROMPT},
-        {"role": "system", "content": context},
-        *session["history"][-20:],
-    ]
-
+def generate_opening_idea(context: str) -> str:
+    """Call the LLM once to produce the first idea. Stateless — no session dict."""
     response = groq_client.chat.completions.create(
         model=GROQ_MODEL,
-        messages=messages,
+        messages=[
+            {"role": "system", "content": IDEA_SYSTEM_PROMPT},
+            {"role": "system", "content": context},
+            {"role": "user",   "content": _OPENING_PROMPT_MARKER},
+        ],
         temperature=0.4,
         max_tokens=1000,
     )
-    reply = response.choices[0].message.content.strip()
-    session["history"].append({"role": "assistant", "content": reply})
-    return reply
+    return response.choices[0].message.content.strip()
+
+
+_OPENING_PROMPT_MARKER = "Generate the ONE best startup idea for this founder using the exact structured format."
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MAIN: Full Pipeline Background Task
+# Backwards-compatible shim — orchestration now lives in orchestrator/orchestrator.py
 # ─────────────────────────────────────────────────────────────────────────────
 async def run_full_pipeline(user_id: str, questionnaire: dict, skills: list):
-    """
-    Runs all 3 steps and saves each result to Supabase DB.
-    Called as a FastAPI BackgroundTask from routes/main.py.
-    """
-    from db import crud
-    from db.connection import get_session
-
-    u = questionnaire.get("user_profile", {})
-    curiosity_domain = u.get("curiosity_domain", "")
-    founder_setup = u.get("founder_setup", "")
-    business_interests = u.get("business_interests", [])
-
-    try:
-        # ── Step 1: Profile Analysis ─────────────────────────────────────────
-        with get_session() as db:
-            crud.upsert_pipeline_status(db, user_id, "running", "profile_analysis")
-
-        log.info(f"[{user_id}] Running ProfileAnalysis...")
-        profile = run_profile_analysis(questionnaire, skills)
-
-        with get_session() as db:
-            crud.save_profile(db, user_id, profile)
-        log.info(f"[{user_id}] ✅ ProfileAnalysis saved to DB")
-
-        # ── Step 2: Problem Discovery ────────────────────────────────────────
-        with get_session() as db:
-            crud.upsert_pipeline_status(db, user_id, "running", "problem_discovery")
-
-        log.info(f"[{user_id}] Running ProblemDiscovery...")
-        problems = run_problem_discovery(profile, questionnaire)
-
-        with get_session() as db:
-            crud.save_problems(db, user_id, problems)
-        log.info(f"[{user_id}] ✅ Problems saved ({len(problems.get('problems', []))} found)")
-
-        # ── Step 3: Generate opening idea ────────────────────────────────────
-        with get_session() as db:
-            crud.upsert_pipeline_status(db, user_id, "running", "idea_generation")
-
-        log.info(f"[{user_id}] Generating opening idea...")
-        context = _build_context(profile, problems, questionnaire, skills)
-        _user_sessions[user_id] = {"context": context, "history": []}
-
-        # FIX 4: Opening prompt is domain-specific and references the actual user signals
-        is_marketplace = any("marketplace" in b.lower() for b in business_interests)
-        model_type = "B2C marketplace" if is_marketplace else "e-commerce"
-        setup_note = (
-            "They have a co-founder, so can split creative and ops roles."
-            if "co-founder" in founder_setup.lower() or "partner" in founder_setup.lower()
-            else "They are a solo founder."
-        )
-        domain_note = f"Their curiosity domain is {curiosity_domain}." if curiosity_domain else ""
-
-        opening = (
-            f"Generate the ONE best startup idea for this founder. "
-            f"{domain_note} {setup_note} "
-            f"Business model: {model_type}. "
-            f"No coding skills — no-code tools only. "
-            f"Use the exact structured format. "
-            f"The idea MUST be in the {curiosity_domain or 'stated'} niche."
-        )
-        idea = chat_with_idea_agent(user_id, opening, context)
-
-        # Don't store the system prompt message in chat history
-        history = [m for m in _user_sessions[user_id]["history"]
-                   if not m["content"].startswith("Generate the ONE best")]
-
-        with get_session() as db:
-            crud.save_idea(db, user_id, idea, history)
-            crud.upsert_pipeline_status(db, user_id, "done", None)
-
-        log.info(f"[{user_id}] ✅ Pipeline complete — idea saved to DB")
-
-    except Exception as e:
-        log.error(f"[{user_id}] ❌ Pipeline error: {e}", exc_info=True)
-        try:
-            with get_session() as db:
-                crud.upsert_pipeline_status(db, user_id, "error", None, str(e))
-        except Exception as db_err:
-            log.error(f"[{user_id}] Also failed to save error status: {db_err}")
+    """Delegates to orchestrator.run_new_user_pipeline. Kept for import compatibility."""
+    from orchestrator.orchestrator import run_new_user_pipeline
+    await run_new_user_pipeline(user_id, questionnaire, skills)
