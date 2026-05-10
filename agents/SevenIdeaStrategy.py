@@ -24,6 +24,7 @@ DB flow:
 """
 
 import json
+import logging
 import os
 import time
 
@@ -39,6 +40,8 @@ from System_Messages.idea_strategy_prompt import (
 )
 
 load_dotenv()
+
+log = logging.getLogger(__name__)
 
 GROQ_API_KEY   = os.getenv("GROQ_API_KEY")
 GROQ_API_BASE  = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
@@ -242,10 +245,7 @@ def run_idea_strategy(
         sources = gather_sources(queries, SERPER_API_KEY, max_sources=10)
         source_mode = "web_enriched" if sources else "synthesis_only"
     else:
-        import logging
-        logging.getLogger(__name__).warning(
-            "[SevenIdeaStrategy] SERPER_API_KEY not set — using synthesis only"
-        )
+        log.warning("SERPER_API_KEY not set — using synthesis only")
 
     # ── 2. Build prompt ──────────────────────────────────────────────────────
     sources = truncate_sources(sources)

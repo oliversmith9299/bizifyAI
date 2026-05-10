@@ -22,6 +22,7 @@ DB flow:
 """
 
 import json
+import logging
 import os
 import time
 
@@ -31,10 +32,9 @@ from openai import OpenAI
 from agents.utils import gather_sources, parse_llm_json, truncate_sources
 from db.connection import SessionLocal
 from db import crud
-from System_Messages.customers_prompt import (
-    CUSTOMERS_ANALYSIS_PROMPT,
-    CUSTOMERS_CHAT_PROMPT,
-)
+from System_Messages.customers_prompt import CUSTOMERS_ANALYSIS_PROMPT, CUSTOMERS_CHAT_PROMPT
+
+log = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -199,10 +199,7 @@ def run_customers_analysis(
         sources = gather_sources(queries, SERPER_API_KEY, max_sources=10)
         source_mode = "web_sourced" if sources else "profile_derived"
     else:
-        import logging
-        logging.getLogger(__name__).warning(
-            "[FourCustomersAgent] SERPER_API_KEY not set — skipping web search"
-        )
+        log.warning("SERPER_API_KEY not set — skipping web search")
 
     # ── 2. Build prompt ──────────────────────────────────────────────────────
     sources = truncate_sources(sources)

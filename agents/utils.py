@@ -6,9 +6,14 @@ Import from here instead of duplicating per-agent.
 import json
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 from bs4 import BeautifulSoup
+
+# Thread pool for running blocking I/O (requests library) without freezing
+# the FastAPI async event loop during background pipeline tasks.
+_executor = ThreadPoolExecutor(max_workers=8)
 
 log = logging.getLogger(__name__)
 
@@ -134,32 +139,37 @@ def gather_sources(
     """
     Run all queries through Serper, deduplicate URLs, fetch content.
 
-    Returns a list of enriched source dicts:
-      { title, url, content }
+    Runs in the shared thread pool so blocking I/O does not freeze the
+    FastAPI async event loop when called from a BackgroundTask.
 
+    Returns a list of enriched source dicts: { title, url, content }
     Only sources with >100 characters of real content are included.
     """
-    seen: set = set()
-    all_sources = []
+    def _run():
+        seen: set = set()
+        all_sources = []
 
-    for q in queries:
-        results = search_serper(q, api_key)
-        for s in extract_sources(results):
-            if s["url"] not in seen:
-                seen.add(s["url"])
-                all_sources.append(s)
-        time.sleep(delay)
+        for q in queries:
+            results = search_serper(q, api_key)
+            for s in extract_sources(results):
+                if s["url"] not in seen:
+                    seen.add(s["url"])
+                    all_sources.append(s)
+            time.sleep(delay)
 
-    enriched = []
-    for s in all_sources[:max_sources * 2]:   # fetch more, keep best
-        content = (
-            fetch_reddit(s["url"])
-            if s["type"] == "reddit"
-            else fetch_web(s["url"], s.get("snippet", ""))
-        )
-        if len(content) > 100:
-            enriched.append({"title": s["title"], "url": s["url"], "content": content})
-        if len(enriched) >= max_sources:
-            break
+        enriched = []
+        for s in all_sources[:max_sources * 2]:
+            content = (
+                fetch_reddit(s["url"])
+                if s["type"] == "reddit"
+                else fetch_web(s["url"], s.get("snippet", ""))
+            )
+            if len(content) > 100:
+                enriched.append({"title": s["title"], "url": s["url"], "content": content})
+            if len(enriched) >= max_sources:
+                break
 
-    return enriched
+        return enriched
+
+    future = _executor.submit(_run)
+    return future.result(timeout=90)   # hard cap: 90s for all searches
