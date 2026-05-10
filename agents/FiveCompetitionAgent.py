@@ -23,6 +23,7 @@ DB flow:
 """
 
 import json
+import logging
 import os
 import time
 
@@ -38,6 +39,8 @@ from System_Messages.competition_prompt import (
 )
 
 load_dotenv()
+
+log = logging.getLogger(__name__)
 
 GROQ_API_KEY   = os.getenv("GROQ_API_KEY")
 GROQ_API_BASE  = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
@@ -213,10 +216,7 @@ def run_competition_analysis(
         sources = gather_sources(queries, SERPER_API_KEY, max_sources=12)
         source_mode = "web_sourced" if sources else "profile_derived"
     else:
-        import logging
-        logging.getLogger(__name__).warning(
-            "[FiveCompetitionAgent] SERPER_API_KEY not set — skipping web search"
-        )
+        log.warning("SERPER_API_KEY not set — skipping web search")
 
     # ── 2. Build prompt ──────────────────────────────────────────────────────
     sources = truncate_sources(sources)

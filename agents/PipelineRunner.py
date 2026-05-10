@@ -17,12 +17,10 @@ import json
 import logging
 import os
 
-from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from openai import OpenAI
-import requests as req
 
-from agents.utils import parse_llm_json
+from agents.utils import fetch_reddit, fetch_web, parse_llm_json, search_serper
 
 load_dotenv()
 
@@ -127,37 +125,6 @@ Return ONLY valid JSON:
 # ─────────────────────────────────────────────────────────────────────────────
 # AGENT 2: Problem Discovery
 # ─────────────────────────────────────────────────────────────────────────────
-def _search_serper(query: str) -> dict:
-    if not SERPER_API_KEY:
-        return {}
-    try:
-        res = req.post(
-            "https://google.serper.dev/search",
-            json={"q": query},
-            headers={"X-API-KEY": SERPER_API_KEY},
-            timeout=10
-        )
-        res.raise_for_status()
-        return res.json()
-    except Exception as e:
-        log.warning(f"Search failed: {e}")
-        return {}
-
-
-def _fetch_page(url: str, snippet: str = "") -> str:
-    try:
-        r = req.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
-        r.raise_for_status()
-        soup = BeautifulSoup(r.text, "html.parser")
-        for tag in soup(["script", "style", "nav", "footer"]):
-            tag.decompose()
-        text = " ".join(
-            p.get_text(strip=True) for p in soup.find_all("p")
-            if len(p.get_text(strip=True)) > 40
-        )
-        return text[:800]
-    except Exception:
-        return snippet[:800]
 
 
 def run_problem_discovery(profile: dict, questionnaire: dict) -> dict:
@@ -206,19 +173,24 @@ def run_problem_discovery(profile: dict, questionnaire: dict) -> dict:
 
     seen, all_sources = set(), []
     for q in queries:
-        for r in _search_serper(q).get("organic", []):
+        for r in search_serper(q, SERPER_API_KEY).get("organic", []):
             url = r.get("link", "")
             if url and url not in seen:
                 seen.add(url)
                 all_sources.append({
-                    "title": r.get("title", ""), "url": url,
+                    "title":   r.get("title", ""),
+                    "url":     url,
                     "snippet": r.get("snippet", ""),
-                    "type": "reddit" if "reddit.com" in url else "web"
+                    "type":    "reddit" if "reddit.com" in url else "web",
                 })
 
     enriched = []
     for s in all_sources[:20]:
-        content = _fetch_page(s["url"], s.get("snippet", ""))
+        content = (
+            fetch_reddit(s["url"])
+            if s["type"] == "reddit"
+            else fetch_web(s["url"], s.get("snippet", ""))
+        )
         if len(content) > 100:
             enriched.append({"title": s["title"], "url": s["url"], "content": content})
     enriched = enriched[:10]
@@ -393,10 +365,3 @@ def generate_opening_idea(context: str) -> str:
 _OPENING_PROMPT_MARKER = "Generate the ONE best startup idea for this founder using the exact structured format."
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Backwards-compatible shim — orchestration now lives in orchestrator/orchestrator.py
-# ─────────────────────────────────────────────────────────────────────────────
-async def run_full_pipeline(user_id: str, questionnaire: dict, skills: list):
-    """Delegates to orchestrator.run_new_user_pipeline. Kept for import compatibility."""
-    from orchestrator.orchestrator import run_new_user_pipeline
-    await run_new_user_pipeline(user_id, questionnaire, skills)

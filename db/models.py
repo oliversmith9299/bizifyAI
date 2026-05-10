@@ -27,22 +27,24 @@ class Business(Base):
 
 
 class Idea(Base):
-    """Section 2 — Ideas & Projects."""
+    """Section 2 — Ideas & Projects. All columns match the platform DB schema exactly."""
     __tablename__ = "ideas"
-    id          = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    owner_id    = Column(String, nullable=False)    # FK → users.id
-    business_id = Column(String, nullable=True)    # FK → businesses.id
-    title       = Column(String, nullable=True)
-    description = Column(Text,   nullable=True)
-    status      = Column(String, default="draft")  # draft | active | archived
-    ai_score    = Column(Float,  nullable=True)
-    budget      = Column(Float,  nullable=True)
-    skills      = Column(JSON,   nullable=True)
-    feasibility = Column(Float,  nullable=True)
-    is_archived = Column(Boolean, default=False)
-    archived_at = Column(DateTime, nullable=True)
-    created_at  = Column(DateTime, default=datetime.utcnow)
-    updated_at  = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id                = Column(String,  primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_id          = Column(String,  nullable=False)   # FK → users.id
+    business_id       = Column(String,  nullable=True)    # FK → businesses.id
+    title             = Column(String,  nullable=True)
+    description       = Column(Text,    nullable=True)
+    status            = Column(String,  default="draft")  # draft | active | archived
+    ai_score          = Column(Float,   nullable=True)
+    budget            = Column(Float,   nullable=True)
+    skills            = Column(JSON,    nullable=True)
+    feasibility       = Column(Float,   nullable=True)
+    is_score_outdated = Column(Boolean, default=False)    # schema field — tracks stale AI scores
+    is_archived       = Column(Boolean, default=False)
+    archived_at       = Column(DateTime, nullable=True)
+    converted_at      = Column(DateTime, nullable=True)   # schema field — when idea → business
+    created_at        = Column(DateTime, default=datetime.utcnow)
+    updated_at        = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class BusinessRoadmap(Base):
@@ -120,7 +122,7 @@ class IdeaResult(Base):
     __tablename__ = "idea_results"
     user_id      = Column(String, primary_key=True)
     current_idea = Column(Text, nullable=True)
-    chat_history = Column(JSON, default=list)
+    chat_history = Column(JSON, default=lambda: [])
     updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class IdeaIntakeResult(Base):
@@ -134,7 +136,7 @@ class CustomersResult(Base):
     __tablename__ = "customers_results"
     user_id      = Column(String, primary_key=True)
     data         = Column(JSON, nullable=False)
-    chat_history = Column(JSON, default=list)
+    chat_history = Column(JSON, default=lambda: [])
     created_at   = Column(DateTime, default=datetime.utcnow)
     updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -142,7 +144,7 @@ class CompetitionResult(Base):
     __tablename__ = "competition_results"
     user_id      = Column(String, primary_key=True)
     data         = Column(JSON, nullable=False)
-    chat_history = Column(JSON, default=list)
+    chat_history = Column(JSON, default=lambda: [])
     created_at   = Column(DateTime, default=datetime.utcnow)
     updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -150,7 +152,7 @@ class MarketPotentialResult(Base):
     __tablename__ = "market_potential_results"
     user_id      = Column(String, primary_key=True)
     data         = Column(JSON, nullable=False)
-    chat_history = Column(JSON, default=list)
+    chat_history = Column(JSON, default=lambda: [])
     created_at   = Column(DateTime, default=datetime.utcnow)
     updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -158,7 +160,7 @@ class IdeaStrategyResult(Base):
     __tablename__ = "idea_strategy_results"
     user_id      = Column(String, primary_key=True)
     data         = Column(JSON, nullable=False)
-    chat_history = Column(JSON, default=list)
+    chat_history = Column(JSON, default=lambda: [])
     created_at   = Column(DateTime, default=datetime.utcnow)
     updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

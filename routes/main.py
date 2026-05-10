@@ -15,6 +15,17 @@ router = APIRouter(prefix="/pipeline", tags=["AI Pipeline"])
 API_SECRET_KEY = os.getenv("API_SECRET_KEY", "dev-key")
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
+# SECURITY CONTRACT (read before adding any route):
+#
+# This service must NEVER be publicly accessible.
+# All requests must come from the backend server, which:
+#   1. Validates the user's JWT token
+#   2. Replaces user_id in the request body with the real authenticated user ID
+#   3. Adds the X-API-KEY header before forwarding here
+#
+# The API key check below proves the request came from the backend.
+# It does NOT prove the user_id in the body is valid — that is the backend's job.
+
 def verify_api_key(x_api_key: str = Header(...)):
     if x_api_key != API_SECRET_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")
