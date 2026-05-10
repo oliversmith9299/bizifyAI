@@ -38,6 +38,15 @@ class IdeaIntakeInput(BaseModel):
 class UserIdInput(BaseModel):
     user_id: str
 
+class SectionChatInput(BaseModel):
+    user_id: str
+    message: str
+    history: List[Dict[str, Any]] = []
+
+class RegenerateCustomInput(BaseModel):
+    user_id: str
+    custom_prompt: str
+
 def build_questionnaire_payload(data: QuestionnaireInput) -> Dict[str, Any]:
     return {
         "user_profile": data.user_profile,
@@ -96,8 +105,12 @@ def get_status(user_id: str, db=Depends(get_db)):
         "current_step": run.current_step,
         "profile_ready":  crud.get_profile(db, user_id) is not None,
         "problems_ready": crud.get_problems(db, user_id) is not None,
-        "intake_ready":   crud.get_idea_intake(db, user_id) is not None,
-        "idea_ready":     crud.get_idea(db, user_id) is not None,
+        "intake_ready":    crud.get_idea_intake_json(db, user_id) is not None,
+        "idea_ready":      crud.get_idea(db, user_id) is not None,
+        "customers_ready":   crud.get_customers_json(db, user_id) is not None,
+        "competition_ready":     crud.get_competition_json(db, user_id) is not None,
+        "market_potential_ready": crud.get_market_potential_json(db, user_id) is not None,
+        "idea_strategy_ready":    crud.get_idea_strategy_json(db, user_id) is not None,
         "error": run.error,
     }
 
@@ -147,11 +160,11 @@ def chat(data: ChatInput, db=Depends(get_db)):
         stored_questionnaire,
         skills
     )
-    intake_row = crud.get_idea_intake(db, data.user_id)
-    if intake_row:
+    intake = crud.get_idea_intake_json(db, data.user_id)
+    if intake:
         context += (
             "\n\n=== USER ORIGINAL IDEA INTAKE ===\n"
-            f"{intake_row.data}"
+            f"{intake}"
         )
 
     # 4. Generate AI Reply
@@ -295,11 +308,9 @@ def idea_intake_run_problems(user_id: str, background_tasks: BackgroundTasks, db
     Call this after idea-intake returns status=ready.
     Runs ProblemDiscovery in the background using the structured intake.
     """
-    intake_row = crud.get_idea_intake(db, user_id)
-    if not intake_row or intake_row.data.get("_status") == "pending_clarification":
+    intake = crud.get_idea_intake_json(db, user_id)
+    if not intake or intake.get("_status") == "pending_clarification":
         raise HTTPException(status_code=425, detail="Idea intake not ready. Complete /idea-intake first.")
-
-    intake = intake_row.data
 
     crud.upsert_pipeline_status(db, user_id, "pending")
 
@@ -321,15 +332,13 @@ def idea_intake_start_chat(data: UserIdInput, db=Depends(get_db)):
     Bridges IdeaIntake + ProblemDiscovery into the existing idea chat.
     Saves compatibility profile/questionnaire rows so /pipeline/chat can continue normally.
     """
-    intake_row = crud.get_idea_intake(db, data.user_id)
+    intake = crud.get_idea_intake_json(db, data.user_id)
     problems_row = crud.get_problems(db, data.user_id)
 
-    if not intake_row or intake_row.data.get("_status") == "pending_clarification":
+    if not intake or intake.get("_status") == "pending_clarification":
         raise HTTPException(status_code=425, detail="Idea intake is not ready yet.")
     if not problems_row:
         raise HTTPException(status_code=425, detail="Problem discovery is not ready yet.")
-
-    intake = intake_row.data
 
     from agents.ThreeIdeaIntakeAgent import (
         _build_profile_for_problem_discovery,
@@ -399,8 +408,454 @@ def idea_intake_start_chat(data: UserIdInput, db=Depends(get_db)):
 @router.get("/idea-intake/{user_id}", dependencies=[Depends(verify_api_key)])
 def get_idea_intake(user_id: str, db=Depends(get_db)):
     """Get the saved idea intake for a returning user."""
-    row = crud.get_idea_intake(db, user_id)
-    if not row:
+    intake = crud.get_idea_intake_json(db, user_id)
+    if not intake:
         raise HTTPException(status_code=404, detail="No idea intake found for this user.")
 
-    return {"user_id": user_id, "intake": row.data}
+    return {"user_id": user_id, "intake": intake}
+
+
+# ── Section 4: Customer Analysis ─────────────────────────────────────────────
+
+@router.post("/customers/{user_id}", dependencies=[Depends(verify_api_key)])
+def generate_customers(user_id: str, db=Depends(get_db)):
+    """
+    Generate the customer analysis for the saved idea.
+    Requires: idea_ready = true (call /pipeline/run or /idea-intake first).
+    """
+    idea_row     = crud.get_idea(db, user_id)
+    problems_row = crud.get_problems(db, user_id)
+
+    if not idea_row:
+        raise HTTPException(status_code=425, detail="Idea not ready. Complete the pipeline first.")
+    if not problems_row:
+        raise HTTPException(status_code=425, detail="Problems not ready. Complete the pipeline first.")
+
+    profile_row = crud.get_profile(db, user_id)
+    profile     = profile_row.data if profile_row else None
+
+    from agents.FourCustomersAgent import run_customers_analysis
+    result = run_customers_analysis(
+        user_id=user_id,
+        idea=idea_row.current_idea or "",
+        problems=problems_row.data,
+        profile=profile,
+    )
+
+    return {
+        "user_id": user_id,
+        "status":  "done",
+        "customers": result,
+    }
+
+
+@router.post("/customers/{user_id}/regenerate", dependencies=[Depends(verify_api_key)])
+def regenerate_customers(user_id: str, db=Depends(get_db)):
+    """Regenerate the customer analysis with the same inputs."""
+    return generate_customers(user_id, db)
+
+
+@router.post("/customers/{user_id}/regenerate-custom", dependencies=[Depends(verify_api_key)])
+def regenerate_customers_custom(data: RegenerateCustomInput, db=Depends(get_db)):
+    """Regenerate the customer analysis with an additional custom instruction."""
+    idea_row     = crud.get_idea(db, data.user_id)
+    problems_row = crud.get_problems(db, data.user_id)
+
+    if not idea_row or not problems_row:
+        raise HTTPException(status_code=425, detail="Idea or problems not ready.")
+
+    profile_row = crud.get_profile(db, data.user_id)
+    profile     = profile_row.data if profile_row else None
+
+    from agents.FourCustomersAgent import run_customers_analysis
+    result = run_customers_analysis(
+        user_id=data.user_id,
+        idea=idea_row.current_idea or "",
+        problems=problems_row.data,
+        profile=profile,
+        custom_prompt=data.custom_prompt,
+    )
+
+    return {
+        "user_id": data.user_id,
+        "status":  "done",
+        "customers": result,
+    }
+
+
+@router.post("/customers/{user_id}/chat", dependencies=[Depends(verify_api_key)])
+def chat_customers(data: SectionChatInput, db=Depends(get_db)):
+    """
+    Refine the customer analysis through a section-scoped chat.
+    Only modifies the customers section — no other pipeline data is touched.
+    """
+    customers_row = crud.get_customers(db, data.user_id)
+    if not customers_row:
+        raise HTTPException(
+            status_code=425,
+            detail="Customer analysis not generated yet. Call POST /customers/{user_id} first."
+        )
+
+    from agents.FourCustomersAgent import chat_customers as _chat
+    reply = _chat(
+        current_analysis=customers_row.data,
+        user_message=data.message,
+        history=data.history,
+    )
+
+    updated_history = data.history + [
+        {"role": "user",      "content": data.message},
+        {"role": "assistant", "content": reply},
+    ]
+    crud.save_customers(db, data.user_id, customers_row.data, updated_history)
+
+    return {
+        "user_id": data.user_id,
+        "reply":   reply,
+        "chat_history_length": len(updated_history),
+    }
+
+
+@router.get("/customers/{user_id}", dependencies=[Depends(verify_api_key)])
+def get_customers(user_id: str, db=Depends(get_db)):
+    """Get the saved customer analysis and chat history."""
+    row = crud.get_customers(db, user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="No customer analysis found for this user.")
+
+    return {
+        "user_id":      user_id,
+        "customers":    row.data,
+        "chat_history": row.chat_history or [],
+    }
+
+
+# ── Section 5: Competition Analysis ──────────────────────────────────────────
+
+@router.post("/competition/{user_id}", dependencies=[Depends(verify_api_key)])
+def generate_competition(user_id: str, db=Depends(get_db)):
+    """
+    Generate competition analysis.
+    Requires idea_ready = true. Enriches output with customer data if available.
+    """
+    idea_row     = crud.get_idea(db, user_id)
+    problems_row = crud.get_problems(db, user_id)
+
+    if not idea_row:
+        raise HTTPException(status_code=425, detail="Idea not ready. Complete the pipeline first.")
+    if not problems_row:
+        raise HTTPException(status_code=425, detail="Problems not ready. Complete the pipeline first.")
+
+    customers_row = crud.get_customers(db, user_id)
+    customers     = customers_row.data if customers_row else None
+
+    from agents.FiveCompetitionAgent import run_competition_analysis
+    result = run_competition_analysis(
+        user_id=user_id,
+        idea=idea_row.current_idea or "",
+        problems=problems_row.data,
+        customers=customers,
+    )
+
+    return {"user_id": user_id, "status": "done", "competition": result}
+
+
+@router.post("/competition/{user_id}/regenerate", dependencies=[Depends(verify_api_key)])
+def regenerate_competition(user_id: str, db=Depends(get_db)):
+    """Regenerate competition analysis with the same inputs."""
+    return generate_competition(user_id, db)
+
+
+@router.post("/competition/{user_id}/regenerate-custom", dependencies=[Depends(verify_api_key)])
+def regenerate_competition_custom(data: RegenerateCustomInput, db=Depends(get_db)):
+    """Regenerate competition analysis with an additional custom instruction."""
+    idea_row     = crud.get_idea(db, data.user_id)
+    problems_row = crud.get_problems(db, data.user_id)
+
+    if not idea_row or not problems_row:
+        raise HTTPException(status_code=425, detail="Idea or problems not ready.")
+
+    customers_row = crud.get_customers(db, data.user_id)
+    customers     = customers_row.data if customers_row else None
+
+    from agents.FiveCompetitionAgent import run_competition_analysis
+    result = run_competition_analysis(
+        user_id=data.user_id,
+        idea=idea_row.current_idea or "",
+        problems=problems_row.data,
+        customers=customers,
+        custom_prompt=data.custom_prompt,
+    )
+
+    return {"user_id": data.user_id, "status": "done", "competition": result}
+
+
+@router.post("/competition/{user_id}/chat", dependencies=[Depends(verify_api_key)])
+def chat_competition(data: SectionChatInput, db=Depends(get_db)):
+    """
+    Refine the competition analysis through a section-scoped chat.
+    Only modifies the competition section — no other pipeline data is touched.
+    """
+    competition_row = crud.get_competition(db, data.user_id)
+    if not competition_row:
+        raise HTTPException(
+            status_code=425,
+            detail="Competition analysis not generated yet. Call POST /competition/{user_id} first."
+        )
+
+    from agents.FiveCompetitionAgent import chat_competition as _chat
+    reply = _chat(
+        current_analysis=competition_row.data,
+        user_message=data.message,
+        history=data.history,
+    )
+
+    updated_history = data.history + [
+        {"role": "user",      "content": data.message},
+        {"role": "assistant", "content": reply},
+    ]
+    crud.save_competition(db, data.user_id, competition_row.data, updated_history)
+
+    return {
+        "user_id": data.user_id,
+        "reply":   reply,
+        "chat_history_length": len(updated_history),
+    }
+
+
+@router.get("/competition/{user_id}", dependencies=[Depends(verify_api_key)])
+def get_competition(user_id: str, db=Depends(get_db)):
+    """Get the saved competition analysis and chat history."""
+    row = crud.get_competition(db, user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="No competition analysis found for this user.")
+
+    return {
+        "user_id":      user_id,
+        "competition":  row.data,
+        "chat_history": row.chat_history or [],
+    }
+
+
+# ── Section 6: Market Potential ───────────────────────────────────────────────
+
+@router.post("/market-potential/{user_id}", dependencies=[Depends(verify_api_key)])
+def generate_market_potential(user_id: str, db=Depends(get_db)):
+    """
+    Generate market potential analysis (TAM/SAM/SOM + PESTEL).
+    Enriched with web-sourced market data when available.
+    Requires idea_ready = true. Pulls customers + competition if available.
+    """
+    idea_row     = crud.get_idea(db, user_id)
+    problems_row = crud.get_problems(db, user_id)
+
+    if not idea_row:
+        raise HTTPException(status_code=425, detail="Idea not ready. Complete the pipeline first.")
+    if not problems_row:
+        raise HTTPException(status_code=425, detail="Problems not ready. Complete the pipeline first.")
+
+    customers_row   = crud.get_customers(db, user_id)
+    competition_row = crud.get_competition(db, user_id)
+
+    from agents.SixMaketPotential import run_market_potential
+    result = run_market_potential(
+        user_id=user_id,
+        idea=idea_row.current_idea or "",
+        problems=problems_row.data,
+        customers=customers_row.data if customers_row else None,
+        competition=competition_row.data if competition_row else None,
+    )
+
+    return {"user_id": user_id, "status": "done", "market_potential": result}
+
+
+@router.post("/market-potential/{user_id}/regenerate", dependencies=[Depends(verify_api_key)])
+def regenerate_market_potential(user_id: str, db=Depends(get_db)):
+    """Regenerate market potential analysis with the same inputs."""
+    return generate_market_potential(user_id, db)
+
+
+@router.post("/market-potential/{user_id}/regenerate-custom", dependencies=[Depends(verify_api_key)])
+def regenerate_market_potential_custom(data: RegenerateCustomInput, db=Depends(get_db)):
+    """Regenerate market potential with an additional custom instruction."""
+    idea_row     = crud.get_idea(db, data.user_id)
+    problems_row = crud.get_problems(db, data.user_id)
+
+    if not idea_row or not problems_row:
+        raise HTTPException(status_code=425, detail="Idea or problems not ready.")
+
+    customers_row   = crud.get_customers(db, data.user_id)
+    competition_row = crud.get_competition(db, data.user_id)
+
+    from agents.SixMaketPotential import run_market_potential
+    result = run_market_potential(
+        user_id=data.user_id,
+        idea=idea_row.current_idea or "",
+        problems=problems_row.data,
+        customers=customers_row.data if customers_row else None,
+        competition=competition_row.data if competition_row else None,
+        custom_prompt=data.custom_prompt,
+    )
+
+    return {"user_id": data.user_id, "status": "done", "market_potential": result}
+
+
+@router.post("/market-potential/{user_id}/chat", dependencies=[Depends(verify_api_key)])
+def chat_market_potential(data: SectionChatInput, db=Depends(get_db)):
+    """
+    Refine the market potential analysis through a section-scoped chat.
+    Only modifies market potential — no other pipeline data is touched.
+    """
+    mp_row = crud.get_market_potential(db, data.user_id)
+    if not mp_row:
+        raise HTTPException(
+            status_code=425,
+            detail="Market potential not generated yet. Call POST /market-potential/{user_id} first."
+        )
+
+    from agents.SixMaketPotential import chat_market_potential as _chat
+    reply = _chat(
+        current_analysis=mp_row.data,
+        user_message=data.message,
+        history=data.history,
+    )
+
+    updated_history = data.history + [
+        {"role": "user",      "content": data.message},
+        {"role": "assistant", "content": reply},
+    ]
+    crud.save_market_potential(db, data.user_id, mp_row.data, updated_history)
+
+    return {
+        "user_id": data.user_id,
+        "reply":   reply,
+        "chat_history_length": len(updated_history),
+    }
+
+
+@router.get("/market-potential/{user_id}", dependencies=[Depends(verify_api_key)])
+def get_market_potential(user_id: str, db=Depends(get_db)):
+    """Get the saved market potential analysis and chat history."""
+    row = crud.get_market_potential(db, user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="No market potential analysis found for this user.")
+
+    return {
+        "user_id":          user_id,
+        "market_potential": row.data,
+        "chat_history":     row.chat_history or [],
+    }
+
+
+# ── Section 7: Idea Strategy ──────────────────────────────────────────────────
+
+@router.post("/idea-strategy/{user_id}", dependencies=[Depends(verify_api_key)])
+def generate_idea_strategy(user_id: str, db=Depends(get_db)):
+    """
+    Generate the idea strategy (value prop, positioning, assumptions, validation plan).
+    Pulls all available prior sections from DB to enrich the analysis.
+    Requires idea_ready = true.
+    """
+    idea_row     = crud.get_idea(db, user_id)
+    problems_row = crud.get_problems(db, user_id)
+
+    if not idea_row:
+        raise HTTPException(status_code=425, detail="Idea not ready. Complete the pipeline first.")
+    if not problems_row:
+        raise HTTPException(status_code=425, detail="Problems not ready. Complete the pipeline first.")
+
+    customers_row   = crud.get_customers(db, user_id)
+    competition_row = crud.get_competition(db, user_id)
+    mp_row          = crud.get_market_potential(db, user_id)
+
+    from agents.SevenIdeaStrategy import run_idea_strategy
+    result = run_idea_strategy(
+        user_id=user_id,
+        idea=idea_row.current_idea or "",
+        problems=problems_row.data,
+        customers=customers_row.data   if customers_row   else None,
+        competition=competition_row.data if competition_row else None,
+        market_potential=mp_row.data   if mp_row          else None,
+    )
+
+    return {"user_id": user_id, "status": "done", "idea_strategy": result}
+
+
+@router.post("/idea-strategy/{user_id}/regenerate", dependencies=[Depends(verify_api_key)])
+def regenerate_idea_strategy(user_id: str, db=Depends(get_db)):
+    """Regenerate the idea strategy with the same inputs."""
+    return generate_idea_strategy(user_id, db)
+
+
+@router.post("/idea-strategy/{user_id}/regenerate-custom", dependencies=[Depends(verify_api_key)])
+def regenerate_idea_strategy_custom(data: RegenerateCustomInput, db=Depends(get_db)):
+    """Regenerate the idea strategy with an additional custom instruction."""
+    idea_row     = crud.get_idea(db, data.user_id)
+    problems_row = crud.get_problems(db, data.user_id)
+
+    if not idea_row or not problems_row:
+        raise HTTPException(status_code=425, detail="Idea or problems not ready.")
+
+    customers_row   = crud.get_customers(db, data.user_id)
+    competition_row = crud.get_competition(db, data.user_id)
+    mp_row          = crud.get_market_potential(db, data.user_id)
+
+    from agents.SevenIdeaStrategy import run_idea_strategy
+    result = run_idea_strategy(
+        user_id=data.user_id,
+        idea=idea_row.current_idea or "",
+        problems=problems_row.data,
+        customers=customers_row.data   if customers_row   else None,
+        competition=competition_row.data if competition_row else None,
+        market_potential=mp_row.data   if mp_row          else None,
+        custom_prompt=data.custom_prompt,
+    )
+
+    return {"user_id": data.user_id, "status": "done", "idea_strategy": result}
+
+
+@router.post("/idea-strategy/{user_id}/chat", dependencies=[Depends(verify_api_key)])
+def chat_idea_strategy(data: SectionChatInput, db=Depends(get_db)):
+    """
+    Refine the idea strategy through a section-scoped chat.
+    Only modifies strategy — no other pipeline data is touched.
+    """
+    strategy_row = crud.get_idea_strategy(db, data.user_id)
+    if not strategy_row:
+        raise HTTPException(
+            status_code=425,
+            detail="Idea strategy not generated yet. Call POST /idea-strategy/{user_id} first."
+        )
+
+    from agents.SevenIdeaStrategy import chat_idea_strategy as _chat
+    reply = _chat(
+        current_analysis=strategy_row.data,
+        user_message=data.message,
+        history=data.history,
+    )
+
+    updated_history = data.history + [
+        {"role": "user",      "content": data.message},
+        {"role": "assistant", "content": reply},
+    ]
+    crud.save_idea_strategy(db, data.user_id, strategy_row.data, updated_history)
+
+    return {
+        "user_id": data.user_id,
+        "reply":   reply,
+        "chat_history_length": len(updated_history),
+    }
+
+
+@router.get("/idea-strategy/{user_id}", dependencies=[Depends(verify_api_key)])
+def get_idea_strategy(user_id: str, db=Depends(get_db)):
+    """Get the saved idea strategy and chat history."""
+    row = crud.get_idea_strategy(db, user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="No idea strategy found for this user.")
+
+    return {
+        "user_id":       user_id,
+        "idea_strategy": row.data,
+        "chat_history":  row.chat_history or [],
+    }

@@ -1,0 +1,98 @@
+{
+  "market_definition": "Online marketplace for curated art supplies and handmade art products targeting consumers in the MENA region, with a focus on Egypt, Saudi Arabia, and UAE.",
+  "target_region": "MENA",
+  "tam": {
+    "value": "4.2",
+    "unit": "billion USD",
+    "source_note": "Global art supplies market ~$65B; MENA share estimated at 6-7% based on regional GDP and creative sector growth",
+    "methodology": "Top-down — global market share applied to MENA population and income levels"
+  },
+  "sam": {
+    "value": "320",
+    "unit": "million USD",
+    "reasoning": "Addressable portion: digitally-active art buyers in Egypt, KSA, and UAE who shop online. Estimated 8% of TAM based on e-commerce penetration in the region."
+  },
+  "som": {
+    "value": "4.8",
+    "unit": "million USD",
+    "reasoning": "Realistic first 3-year capture: 1.5% of SAM. Assumes 12,000 active buyers at an average order value of ~$400/year. Achievable through focused Instagram marketing and university partnerships.",
+    "timeline": "3 years from launch"
+  },
+  "market_trends": [
+    "MENA e-commerce growing at 25%+ CAGR — one of the fastest globally",
+    "Creator economy booming: art, design, and DIY content exploding on TikTok and Instagram in Arabic",
+    "Post-COVID surge in hobby spending — art supplies among top beneficiaries",
+    "Rising demand for locally-made and authentic products over mass-produced imports",
+    "Increasing smartphone penetration (>90% in Gulf states) driving mobile commerce"
+  ],
+  "growth_drivers": [
+    "Young, digitally-native MENA population (60% under 30) with growing disposable income",
+    "Expansion of art education in schools and universities across MENA",
+    "Government 'creative economy' initiatives (Saudi Vision 2030, UAE cultural investments)",
+    "Shift from international shipping to local e-commerce post-COVID supply disruptions",
+    "Social media driven discovery — art content is highly shareable and viral"
+  ],
+  "adoption_barriers": [
+    "Low trust in online marketplaces — payment fraud concerns, especially in Egypt",
+    "Preference for touching/inspecting products before buying (especially for premium art supplies)",
+    "Limited local payment rails (many buyers lack international credit cards)",
+    "Price sensitivity — a significant portion of the audience is students with small budgets",
+    "Established offline retail habits in tier-2 MENA cities"
+  ],
+  "timing_assessment": {
+    "is_right_time": true,
+    "reasoning": "The convergence of MENA e-commerce growth, creator economy expansion, and lack of a curated local marketplace creates a clear window. Waiting 2+ years risks a better-funded competitor entering first."
+  },
+  "pestel_analysis": {
+    "political": {
+      "factors": [
+        "Saudi Vision 2030 actively funds creative sector development",
+        "UAE and Egypt government support for SME and startup ecosystems",
+        "Some regulatory uncertainty around cross-border payment flows"
+      ],
+      "impact": "positive"
+    },
+    "economic": {
+      "factors": [
+        "MENA GDP growth stabilising at 3-4% — middle class expanding",
+        "Currency devaluation in Egypt creates price sensitivity but also import substitution opportunity",
+        "Gulf consumer spending power remains high despite oil price volatility"
+      ],
+      "impact": "neutral"
+    },
+    "social": {
+      "factors": [
+        "Gen-Z and millennial MENA consumers value authenticity and local brands",
+        "Art and crafts increasingly seen as career path, not just hobby",
+        "Highly connected via social media — strong word-of-mouth potential"
+      ],
+      "impact": "positive"
+    },
+    "technological": {
+      "factors": [
+        "High smartphone penetration makes mobile-first marketplace viable",
+        "Sharetribe and similar no-code tools make marketplace launch affordable",
+        "Payment gateways (Fawry, Tabby, Tamara) expanding BNPL options in MENA"
+      ],
+      "impact": "positive"
+    },
+    "environmental": {
+      "factors": [
+        "Growing consumer preference for sustainable, locally-sourced art materials",
+        "Reduced import shipping aligns with sustainability narrative"
+      ],
+      "impact": "positive"
+    },
+    "legal": {
+      "factors": [
+        "E-commerce regulations still maturing across MENA countries",
+        "Consumer protection laws vary significantly by country",
+        "VAT implementation in Gulf states adds compliance overhead"
+      ],
+      "impact": "neutral"
+    }
+  },
+  "opportunity_score": 8,
+  "opportunity_attractiveness": "high",
+  "summary": "The MENA art supplies market represents a genuine, underserved opportunity. The TAM is large, the SAM is reachable through digital channels, and the SOM is achievable within 3 years with focused execution. PESTEL factors are broadly favourable — government tailwinds, young digital consumers, and expanding payment infrastructure. The main risks are low trust in online payments and price sensitivity among students. Overall, this is a high-attractiveness opportunity with good timing."
+}

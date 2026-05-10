@@ -12,7 +12,13 @@ from typing import Dict, List
 from dotenv import load_dotenv
 from openai import OpenAI
 from bs4 import BeautifulSoup
-from agents.utils import parse_llm_json
+from agents.utils import (
+    parse_llm_json,
+    search_serper as _search_serper_util,
+    extract_sources,
+    fetch_reddit,
+    fetch_web,
+)
 
 
 # ─────────────────────────────────────────────────────────
@@ -56,74 +62,10 @@ def expand_queries(keywords: List[str], max_total=12) -> List[str]:
     return queries
 
 
+# search_google, extract_sources, fetch_reddit, fetch_web
+# are now shared from agents.utils — imported at the top.
 def search_google(query: str) -> dict:
-    try:
-        res = requests.post(
-            "https://google.serper.dev/search",
-            json={"q": query},
-            headers={"X-API-KEY": SERPER_API_KEY},
-            timeout=10,
-        )
-        res.raise_for_status()
-        return res.json()
-    except Exception as e:
-        log.warning(f"Search failed: {e}")
-        return {}
-
-
-def extract_sources(results: dict) -> List[dict]:
-    sources = []
-    for r in results.get("organic", []):
-        url = r.get("link")
-        if not url:
-            continue
-        sources.append({
-            "title": r.get("title", ""),
-            "url": url,
-            "snippet": r.get("snippet", ""),
-            "type": "reddit" if "reddit.com" in url else "web",
-        })
-    return sources
-
-
-# ─────────────────────────────────────────────────────────
-# Content Fetchers
-# ─────────────────────────────────────────────────────────
-def fetch_reddit(url: str) -> str:
-    if "/comments/" not in url:
-        return ""
-    try:
-        res = requests.get(url.rstrip("/") + ".json", timeout=8)
-        data = res.json()
-        post = data[0]["data"]["children"][0]["data"]
-        comments = data[1]["data"]["children"]
-
-        content = post.get("selftext", "")
-        for c in comments[:5]:
-            content += "\n" + c["data"].get("body", "")
-
-        return content[:CONTENT_CHARS_PER_SOURCE]
-    except Exception:
-        return ""
-
-
-def fetch_web(url: str, fallback="") -> str:
-    try:
-        r = requests.get(url, timeout=8)
-        soup = BeautifulSoup(r.text, "html.parser")
-
-        for tag in soup(["script", "style", "nav", "footer"]):
-            tag.decompose()
-
-        text = " ".join(
-            p.get_text(strip=True)
-            for p in soup.find_all("p")
-            if len(p.get_text(strip=True)) > 40
-        )
-
-        return text[:CONTENT_CHARS_PER_SOURCE]
-    except Exception:
-        return fallback[:CONTENT_CHARS_PER_SOURCE]
+    return _search_serper_util(query, SERPER_API_KEY)
 
 
 # ─────────────────────────────────────────────────────────
