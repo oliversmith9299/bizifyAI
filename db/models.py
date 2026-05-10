@@ -1,8 +1,91 @@
-from sqlalchemy import Column, String, JSON, Text, DateTime
+import uuid
+from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, JSON, Text, DateTime
 from datetime import datetime
 
 # Shared base from connection
 from db.connection import Base
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Real platform tables (matching the DB schema PDF — Section 2, 3, 4, 9)
+# These tables are owned by the backend; the AI service reads/writes them.
+# Do NOT rename columns — they must stay in sync with the backend migrations.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class Business(Base):
+    """Section 3 — Businesses & Industries."""
+    __tablename__ = "businesses"
+    id            = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    idea_id       = Column(String, nullable=True)   # FK → ideas.id
+    owner_id      = Column(String, nullable=False)  # FK → users.id (managed by backend)
+    industry_id   = Column(String, nullable=True)   # FK → industries.id
+    stage         = Column(String, nullable=True)
+    context_json  = Column(JSON,   nullable=True)
+    is_archived   = Column(Boolean, default=False)
+    archived_at   = Column(DateTime, nullable=True)
+    created_at    = Column(DateTime, default=datetime.utcnow)
+    updated_at    = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Idea(Base):
+    """Section 2 — Ideas & Projects."""
+    __tablename__ = "ideas"
+    id          = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_id    = Column(String, nullable=False)    # FK → users.id
+    business_id = Column(String, nullable=True)    # FK → businesses.id
+    title       = Column(String, nullable=True)
+    description = Column(Text,   nullable=True)
+    status      = Column(String, default="draft")  # draft | active | archived
+    ai_score    = Column(Float,  nullable=True)
+    budget      = Column(Float,  nullable=True)
+    skills      = Column(JSON,   nullable=True)
+    feasibility = Column(Float,  nullable=True)
+    is_archived = Column(Boolean, default=False)
+    archived_at = Column(DateTime, nullable=True)
+    created_at  = Column(DateTime, default=datetime.utcnow)
+    updated_at  = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class BusinessRoadmap(Base):
+    """Section 4 — AI & Roadmaps."""
+    __tablename__          = "business_roadmaps"
+    id                     = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    business_id            = Column(String, nullable=False)  # FK → businesses.id
+    completion_percentage  = Column(Float, default=0.0)
+    created_at             = Column(DateTime, default=datetime.utcnow)
+
+
+class RoadmapStage(Base):
+    """Section 4 — one row per pipeline step per business."""
+    __tablename__ = "roadmap_stages"
+    id            = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    roadmap_id    = Column(String, ForeignKey("business_roadmaps.id"), nullable=False)
+    order_index   = Column(Integer, nullable=True)
+    stage_type    = Column(String, nullable=True)   # matches Step enum values
+    status        = Column(String, default="pending")  # pending | running | done | error
+    output_json   = Column(JSON, nullable=True)
+    completed_at  = Column(DateTime, nullable=True)
+
+
+class ChatSession(Base):
+    """Section 9 — Chat, Files & Notifications."""
+    __tablename__              = "chat_sessions"
+    id                         = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id                    = Column(String, nullable=False)   # FK → users.id
+    business_id                = Column(String, nullable=True)    # FK → businesses.id
+    idea_id                    = Column(String, nullable=True)    # FK → ideas.id
+    session_type               = Column(String, nullable=True)    # idea_chat | section_chat
+    conversation_summary_json  = Column(JSON, nullable=True)
+    created_at                 = Column(DateTime, default=datetime.utcnow)
+
+
+class ChatMessage(Base):
+    """Section 9 — individual messages inside a chat session."""
+    __tablename__ = "chat_messages"
+    id         = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id = Column(String, ForeignKey("chat_sessions.id"), nullable=False)
+    role       = Column(String, nullable=False)   # user | assistant | system
+    content    = Column(Text,   nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class PipelineRun(Base):
     __tablename__ = "pipeline_runs"
@@ -46,3 +129,53 @@ class IdeaIntakeResult(Base):
     data         = Column(JSON, nullable=False)
     created_at   = Column(DateTime, default=datetime.utcnow)
     updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class CustomersResult(Base):
+    __tablename__ = "customers_results"
+    user_id      = Column(String, primary_key=True)
+    data         = Column(JSON, nullable=False)
+    chat_history = Column(JSON, default=list)
+    created_at   = Column(DateTime, default=datetime.utcnow)
+    updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class CompetitionResult(Base):
+    __tablename__ = "competition_results"
+    user_id      = Column(String, primary_key=True)
+    data         = Column(JSON, nullable=False)
+    chat_history = Column(JSON, default=list)
+    created_at   = Column(DateTime, default=datetime.utcnow)
+    updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class MarketPotentialResult(Base):
+    __tablename__ = "market_potential_results"
+    user_id      = Column(String, primary_key=True)
+    data         = Column(JSON, nullable=False)
+    chat_history = Column(JSON, default=list)
+    created_at   = Column(DateTime, default=datetime.utcnow)
+    updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class IdeaStrategyResult(Base):
+    __tablename__ = "idea_strategy_results"
+    user_id      = Column(String, primary_key=True)
+    data         = Column(JSON, nullable=False)
+    chat_history = Column(JSON, default=list)
+    created_at   = Column(DateTime, default=datetime.utcnow)
+    updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class Agent(Base):
+    __tablename__ = "agents"
+    id    = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name  = Column(String, nullable=False, unique=True)
+    phase = Column(String, nullable=True)
+
+class AgentRun(Base):
+    __tablename__ = "agent_runs"
+    id                = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    stage_id          = Column(String, nullable=True)
+    agent_id          = Column(String, ForeignKey("agents.id"), nullable=False)
+    status            = Column(String, default="done")
+    input_data        = Column(JSON, nullable=True)
+    output_data       = Column(JSON, nullable=True)
+    confidence_score  = Column(Float, nullable=True)
+    execution_time_ms = Column(Integer, nullable=True)
+    created_at        = Column(DateTime, default=datetime.utcnow)

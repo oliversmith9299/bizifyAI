@@ -1,0 +1,65 @@
+{
+  "customer_segments": [
+    {
+      "id": "CS1",
+      "name": "University Art Students",
+      "description": "Undergraduate and postgraduate students enrolled in fine arts, graphic design, or creative programmes who need affordable, authentic art supplies and peer critique.",
+      "pain_intensity": "high",
+      "size_estimate": "~2M students across MENA universities",
+      "willingness_to_pay": "medium",
+      "why_they_care": "They spend a large share of their limited budget on supplies and struggle to find curated, locally relevant art communities online.",
+      "behavior": "Active on Instagram and Pinterest, buy in small batches, rely on peer word-of-mouth, sensitive to price.",
+      "where_to_find": ["Instagram art communities", "university Facebook groups", "Behance", "art supply stores"]
+    },
+    {
+      "id": "CS2",
+      "name": "Amateur Adult Hobbyists",
+      "description": "Working professionals aged 25-45 who paint or sketch as a hobby and want quality supplies without the hassle of international shipping.",
+      "pain_intensity": "medium",
+      "size_estimate": "~5M hobbyists in MENA",
+      "willingness_to_pay": "high",
+      "why_they_care": "They have disposable income but limited access to specialty items locally; they want curation and convenience.",
+      "behavior": "Weekend buyers, research-heavy before purchase, loyal to brands they trust.",
+      "where_to_find": ["Facebook hobby groups", "YouTube tutorials", "local art cafes", "LinkedIn"]
+    }
+  ],
+  "primary_segment": {
+    "id": "CS1",
+    "reason": "Highest pain intensity, fastest to reach via digital channels, and most likely to spread through word-of-mouth within tight university communities."
+  },
+  "catwoe_analysis": {
+    "customers": "Art students and hobbyists who need curated, locally available art supplies and community.",
+    "actors": "Founders who source and curate products, marketplace sellers, delivery partners.",
+    "transformation": "From scattered, expensive, import-dependent art supply buying → to a single trusted local marketplace with community features.",
+    "worldview": "Creative tools should be accessible and affordable to everyone, not just those with international credit cards or large budgets.",
+    "owner": "The founding team who builds and maintains the platform and enforces quality standards.",
+    "environment": "MENA market with limited local art supply infrastructure, growing creative economy, and high smartphone penetration."
+  },
+  "personas": [
+    {
+      "name": "Layla",
+      "age": "22",
+      "job": "Fine Arts student, Cairo University",
+      "pain": "Spends 3 hours finding affordable watercolour sets online and pays 40% extra on shipping from abroad.",
+      "goal": "Find quality supplies quickly and connect with other students who can critique her work.",
+      "quote": "I just want one place where I know the product is real and the price is fair."
+    },
+    {
+      "name": "Omar",
+      "age": "34",
+      "job": "Software engineer who paints on weekends",
+      "pain": "Locally available brushes are low quality; good ones require a 3-week international delivery wait.",
+      "goal": "Reliably restock his studio with premium materials without the shipping anxiety.",
+      "quote": "If someone curated the best supplies and delivered locally, I'd pay a premium without thinking twice."
+    }
+  ],
+  "acquisition_channels": [
+    "Instagram art hashtags and micro-influencer collaborations",
+    "University art club partnerships",
+    "YouTube tutorial sponsorships",
+    "WhatsApp referral groups",
+    "Art cafe pop-up events"
+  ],
+  "early_adopter_profile": "Art students at large urban universities (Cairo, Riyadh, Dubai) who are active on Instagram, already buying supplies online, and willing to try a new local platform if the price and curation are clearly better.",
+  "summary": "The primary target is art students with high pain and strong community influence. Secondary is adult hobbyists with higher willingness to pay. Both segments are reachable via Instagram and community partnerships. The CATWOE analysis confirms the transformation is clear, the customer is well-defined, and the environment supports a local marketplace model."
+}

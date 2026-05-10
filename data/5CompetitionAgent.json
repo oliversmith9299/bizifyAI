@@ -1,0 +1,116 @@
+{
+  "direct_competitors": [
+    {
+      "id": "DC1",
+      "name": "Etsy",
+      "description": "Global marketplace for handmade and vintage goods including art supplies and artworks.",
+      "target_customer": "Global buyers of handmade items, mostly US and Europe-based",
+      "pricing_model": "Listing fee $0.20 + 6.5% transaction fee",
+      "key_features": ["Global reach", "Established trust", "Buyer protection", "Search discovery"],
+      "strengths": ["Brand recognition", "Massive seller and buyer base", "Strong SEO"],
+      "weaknesses": ["No local MENA focus", "High competition makes discovery hard", "Currency and shipping friction for MENA users"],
+      "market_share_estimate": "Dominant globally, weak in MENA"
+    },
+    {
+      "id": "DC2",
+      "name": "OpenSooq (Art category)",
+      "description": "MENA classifieds platform with a small art and craft supplies section.",
+      "target_customer": "Budget-conscious MENA buyers looking for secondhand or local items",
+      "pricing_model": "Free basic listings, paid boosts",
+      "key_features": ["Arabic language", "Local payments", "Mobile-first"],
+      "strengths": ["MENA-native", "Free to list", "Large user base"],
+      "weaknesses": ["Not curated", "No quality control", "No art community features", "Trust issues"],
+      "market_share_estimate": "Significant in classifieds, minimal in art supplies specifically"
+    }
+  ],
+  "indirect_alternatives": [
+    {
+      "id": "IA1",
+      "name": "Local stationery stores",
+      "description": "Physical shops selling basic art supplies in MENA cities.",
+      "why_users_choose_it": "Immediate availability, no shipping wait, ability to touch the product",
+      "key_limitation": "Limited range, no specialty items, no community"
+    },
+    {
+      "id": "IA2",
+      "name": "Amazon.ae / Noon",
+      "description": "General e-commerce platforms with art supply listings from various sellers.",
+      "why_users_choose_it": "Fast delivery, easy returns, familiar checkout",
+      "key_limitation": "No curation, no community, quality is inconsistent"
+    }
+  ],
+  "substitute_solutions": [
+    "Buying from international sites (shipping cost + wait accepted as trade-off)",
+    "Group buying through WhatsApp communities to split import costs",
+    "Making do with locally available lower-quality materials"
+  ],
+  "positioning_gaps": [
+    {
+      "gap": "No curated, MENA-focused art supply marketplace exists",
+      "opportunity": "Own the 'quality + local' positioning — be the Etsy for MENA art buyers"
+    },
+    {
+      "gap": "No platform combines buying with a creator community",
+      "opportunity": "Add peer critique, follow artists, showcase work — make buying social"
+    },
+    {
+      "gap": "Trust is broken on classifieds, international sites are too slow",
+      "opportunity": "Build a verified-seller badge system and offer local payment methods"
+    }
+  ],
+  "porters_five_forces": {
+    "bargaining_power_buyers": {
+      "level": "medium",
+      "reasoning": "Buyers have alternatives (local stores, Amazon) but none offer the curated MENA-specific experience. Switching cost is low early on, but community lock-in can change this."
+    },
+    "bargaining_power_suppliers": {
+      "level": "low",
+      "reasoning": "Sellers (local artists and importers) have few quality platforms to sell on in MENA, giving the marketplace leverage."
+    },
+    "threat_new_entrants": {
+      "level": "medium",
+      "reasoning": "Low technical barrier to build a marketplace (Sharetribe), but building trust and community takes time — that is the real moat."
+    },
+    "threat_substitutes": {
+      "level": "high",
+      "reasoning": "Physical stores, WhatsApp group buys, and international shipping are all readily available substitutes."
+    },
+    "competitive_rivalry": {
+      "level": "low",
+      "reasoning": "No direct MENA-focused curated art supply marketplace currently exists. First-mover advantage is real here."
+    }
+  },
+  "vrio_analysis": [
+    {
+      "resource": "MENA-local focus and Arabic-language UX",
+      "valuable": true,
+      "rare": true,
+      "inimitable": false,
+      "organized": true,
+      "conclusion": "Temporary competitive advantage — others can copy the language, but the community and seller relationships take time to replicate"
+    },
+    {
+      "resource": "Curated, verified seller programme",
+      "valuable": true,
+      "rare": true,
+      "inimitable": false,
+      "organized": true,
+      "conclusion": "Sustained advantage if quality standards are maintained and seller relationships are deep"
+    },
+    {
+      "resource": "Creator community features (peer critique, showcases)",
+      "valuable": true,
+      "rare": true,
+      "inimitable": true,
+      "organized": false,
+      "conclusion": "Potential sustained advantage — needs investment to organise properly"
+    }
+  ],
+  "differentiation_opportunities": [
+    "MENA-first curation: hand-pick sellers, enforce quality, publish reviews in Arabic",
+    "Community layer: follow artists, get critiques, share work-in-progress",
+    "Local payment rails: Fawry, Mada, KNET — remove the international card friction",
+    "Subscription box for regular buyers: monthly curated supply drop"
+  ],
+  "summary": "The competitive landscape is fragmented: global platforms ignore MENA, local classifieds lack curation, and physical stores are limited in range. Porter's analysis shows low current rivalry and low supplier power — a favourable environment for entry. The main threat is substitutes (physical stores, WhatsApp groups, Amazon). The clearest differentiation path is owning the 'curated + community + local payment' position before a better-funded player notices the gap."
+}

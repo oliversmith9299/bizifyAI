@@ -218,6 +218,12 @@ data/ElevenUnitEconomicsAgent.json
 data/TwelveGoToMarket.json
 ```
 
+## Database Integration
+
+The backend schema should use the shared `agents` and `agent_runs` tables as the canonical storage for AI agent execution history. Each agent is registered once in `agents`, and every run is stored in `agent_runs` with its input JSON, output JSON, status, confidence score, execution time, and roadmap stage link when available.
+
+Temporary per-agent result tables such as profile, problems, idea, or intake results may remain during transition for backward compatibility, but long-term agent outputs should be read from `agent_runs.output_data`.
+
 ## Product Logic
 
 The project is designed to keep the founder moving through a structured startup-building journey:
