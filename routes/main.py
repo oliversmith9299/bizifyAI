@@ -1,12 +1,14 @@
+import json
 import os
 import time
-from typing import Any, Dict, List
+from collections.abc import Generator
+from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from db.connection import get_db
+from db.connection import get_db, SessionLocal
 from db import crud
 
 
@@ -57,6 +59,73 @@ class SectionChatInput(BaseModel):
 class RegenerateCustomInput(BaseModel):
     user_id: str
     custom_prompt: str
+
+
+# ── SSE streaming helper ──────────────────────────────────────────────────────
+
+def _sse_chat_stream(
+    messages: list,
+    groq_client: Any,
+    groq_model: str,
+    temperature: float,
+    max_tokens: int,
+    on_complete: Callable[[str], Dict[str, Any]],
+) -> StreamingResponse:
+    """
+    Stream LLM tokens as Server-Sent Events and call `on_complete` with the
+    full assembled reply once streaming finishes.
+
+    SSE event format
+    ────────────────
+    Content token:
+        data: {"type": "token", "content": "word "}
+
+    Stream finished (includes metadata from on_complete):
+        data: {"type": "done", "chat_history_length": 42}
+
+    The caller (route) validates everything before calling this function so
+    that HTTP errors are returned normally, not buried inside the SSE stream.
+
+    Args:
+        messages:     Full message list passed to the LLM.
+        groq_client:  Initialised OpenAI-compatible client.
+        groq_model:   Model name string.
+        temperature:  Sampling temperature.
+        max_tokens:   Max tokens for this call.
+        on_complete:  Called once with the full reply string.
+                      Must return a dict that is merged into the "done" event.
+                      Must save to DB internally (it runs inside the generator).
+    """
+    def _generator() -> Generator[str, None, None]:
+        stream = groq_client.chat.completions.create(
+            model=groq_model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        )
+
+        tokens: list[str] = []
+
+        for chunk in stream:
+            delta: str = chunk.choices[0].delta.content or ""
+            if delta:
+                tokens.append(delta)
+                yield f"data: {json.dumps({'type': 'token', 'content': delta})}\n\n"
+
+        # Stream complete — assemble full reply and persist
+        full_reply = "".join(tokens)
+        metadata   = on_complete(full_reply)
+        yield f"data: {json.dumps({'type': 'done', **metadata})}\n\n"
+
+    return StreamingResponse(
+        _generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control":     "no-cache",
+            "X-Accel-Buffering": "no",   # disable nginx buffering so tokens flow immediately
+        },
+    )
 
 def build_questionnaire_payload(data: QuestionnaireInput) -> Dict[str, Any]:
     return {
@@ -209,6 +278,77 @@ def chat(data: ChatInput, db=Depends(get_db)):
         "reply": reply,
         "chat_history_length": len(existing_history),
     }
+
+
+@router.post("/chat/stream", dependencies=[Depends(verify_api_key)])
+def chat_stream(data: ChatInput, db=Depends(get_db)) -> StreamingResponse:
+    """
+    Streaming version of /chat — returns tokens as Server-Sent Events.
+
+    SSE events:
+      data: {"type": "token",  "content": "..."}   ← one per token chunk
+      data: {"type": "done",   "chat_history_length": N}  ← stream finished
+
+    The frontend must read the event stream and append tokens to the UI as
+    they arrive. The full reply is automatically saved to DB before the
+    'done' event fires, so a subsequent GET /idea/{user_id} reflects it.
+    """
+    run = crud.get_pipeline_status(db, data.user_id)
+    if not run or run.status != "done":
+        raise HTTPException(status_code=425, detail="Pipeline not ready yet.")
+
+    idea_row          = crud.get_idea(db, data.user_id)
+    profile_row       = crud.get_profile(db, data.user_id)
+    problems_row      = crud.get_problems(db, data.user_id)
+    questionnaire_row = crud.get_questionnaire_output(db, data.user_id)
+
+    if not (idea_row and profile_row and problems_row and questionnaire_row):
+        raise HTTPException(status_code=425, detail="Missing required context in DB to chat.")
+
+    from agents.PipelineRunner import build_context, groq_client, GROQ_MODEL, IDEA_SYSTEM_PROMPT
+
+    stored_questionnaire = questionnaire_row.data
+    context = build_context(
+        problems_row.data,
+        stored_questionnaire,
+        stored_questionnaire.get("skills", []),
+    )
+    intake = crud.get_idea_intake_json(db, data.user_id)
+    if intake:
+        context += f"\n\n=== USER ORIGINAL IDEA INTAKE ===\n{intake}"
+
+    existing_history: list = idea_row.chat_history or []
+    messages = [
+        {"role": "system", "content": IDEA_SYSTEM_PROMPT},
+        {"role": "system", "content": context},
+        *existing_history[-20:],
+        {"role": "user",   "content": data.message},
+    ]
+
+    # Capture variables needed inside the closure
+    user_id          = data.user_id
+    current_idea_txt = idea_row.current_idea
+
+    def _on_complete(full_reply: str) -> Dict[str, Any]:
+        new_idea = full_reply if "💡 IDEA:" in full_reply else current_idea_txt
+        updated  = existing_history + [
+            {"role": "user",      "content": data.message},
+            {"role": "assistant", "content": full_reply},
+        ]
+        # Use a fresh session — the route's session closes before the generator runs
+        with SessionLocal() as s:
+            crud.save_idea(s, user_id, new_idea, updated)
+        return {"chat_history_length": len(updated)}
+
+    return _sse_chat_stream(
+        messages=messages,
+        groq_client=groq_client,
+        groq_model=GROQ_MODEL,
+        temperature=0.4,
+        max_tokens=1000,
+        on_complete=_on_complete,
+    )
+
 
 #────────────────────────────────────────────────────────────────────────────
 @router.get("/questionnaire/{user_id}", dependencies=[Depends(verify_api_key)])
@@ -527,6 +667,52 @@ def chat_customers(data: SectionChatInput, db=Depends(get_db)):
     }
 
 
+@router.post("/customers/{user_id}/chat/stream", dependencies=[Depends(verify_api_key)])
+def chat_customers_stream(data: SectionChatInput, db=Depends(get_db)) -> StreamingResponse:
+    """
+    Streaming version of /customers/{user_id}/chat.
+    Returns customer-analysis refinement tokens as Server-Sent Events.
+    """
+    customers_row = crud.get_customers(db, data.user_id)
+    if not customers_row:
+        raise HTTPException(status_code=425, detail="Customer analysis not generated yet.")
+
+    from agents.PipelineRunner import groq_client, GROQ_MODEL
+
+    current_data = customers_row.data
+    user_id      = data.user_id
+
+    # Build the same messages the non-streaming endpoint would build
+    import json as _json
+    from System_Messages.customers_prompt import CUSTOMERS_CHAT_PROMPT
+
+    context  = "=== CURRENT CUSTOMER ANALYSIS ===\n" + _json.dumps(current_data, indent=2)
+    messages = [
+        {"role": "system", "content": CUSTOMERS_CHAT_PROMPT},
+        {"role": "system", "content": context},
+        *data.history[-20:],
+        {"role": "user",   "content": data.message},
+    ]
+
+    def _on_complete(full_reply: str) -> Dict[str, Any]:
+        updated = data.history + [
+            {"role": "user",      "content": data.message},
+            {"role": "assistant", "content": full_reply},
+        ]
+        with SessionLocal() as s:
+            crud.save_customers(s, user_id, current_data, updated)
+        return {"chat_history_length": len(updated)}
+
+    return _sse_chat_stream(
+        messages=messages,
+        groq_client=groq_client,
+        groq_model=GROQ_MODEL,
+        temperature=0.4,
+        max_tokens=1200,
+        on_complete=_on_complete,
+    )
+
+
 @router.get("/customers/{user_id}", dependencies=[Depends(verify_api_key)])
 def get_customers(user_id: str, db=Depends(get_db)):
     """Get the saved customer analysis and chat history."""
@@ -632,6 +818,42 @@ def chat_competition(data: SectionChatInput, db=Depends(get_db)):
         "reply":   reply,
         "chat_history_length": len(updated_history),
     }
+
+
+@router.post("/competition/{user_id}/chat/stream", dependencies=[Depends(verify_api_key)])
+def chat_competition_stream(data: SectionChatInput, db=Depends(get_db)) -> StreamingResponse:
+    """Streaming version of /competition/{user_id}/chat — tokens via SSE."""
+    competition_row = crud.get_competition(db, data.user_id)
+    if not competition_row:
+        raise HTTPException(status_code=425, detail="Competition analysis not generated yet.")
+
+    import json as _json
+    from agents.PipelineRunner import groq_client, GROQ_MODEL
+    from System_Messages.competition_prompt import COMPETITION_CHAT_PROMPT
+
+    current_data = competition_row.data
+    user_id      = data.user_id
+    context      = "=== CURRENT COMPETITION ANALYSIS ===\n" + _json.dumps(current_data, indent=2)
+    messages     = [
+        {"role": "system", "content": COMPETITION_CHAT_PROMPT},
+        {"role": "system", "content": context},
+        *data.history[-20:],
+        {"role": "user",   "content": data.message},
+    ]
+
+    def _on_complete(full_reply: str) -> Dict[str, Any]:
+        updated = data.history + [
+            {"role": "user",      "content": data.message},
+            {"role": "assistant", "content": full_reply},
+        ]
+        with SessionLocal() as s:
+            crud.save_competition(s, user_id, current_data, updated)
+        return {"chat_history_length": len(updated)}
+
+    return _sse_chat_stream(
+        messages=messages, groq_client=groq_client, groq_model=GROQ_MODEL,
+        temperature=0.4, max_tokens=1200, on_complete=_on_complete,
+    )
 
 
 @router.get("/competition/{user_id}", dependencies=[Depends(verify_api_key)])
@@ -742,6 +964,42 @@ def chat_market_potential(data: SectionChatInput, db=Depends(get_db)):
         "reply":   reply,
         "chat_history_length": len(updated_history),
     }
+
+
+@router.post("/market-potential/{user_id}/chat/stream", dependencies=[Depends(verify_api_key)])
+def chat_market_potential_stream(data: SectionChatInput, db=Depends(get_db)) -> StreamingResponse:
+    """Streaming version of /market-potential/{user_id}/chat — tokens via SSE."""
+    mp_row = crud.get_market_potential(db, data.user_id)
+    if not mp_row:
+        raise HTTPException(status_code=425, detail="Market potential not generated yet.")
+
+    import json as _json
+    from agents.PipelineRunner import groq_client, GROQ_MODEL
+    from System_Messages.market_potential_prompt import MARKET_POTENTIAL_CHAT_PROMPT
+
+    current_data = mp_row.data
+    user_id      = data.user_id
+    context      = "=== CURRENT MARKET POTENTIAL ANALYSIS ===\n" + _json.dumps(current_data, indent=2)
+    messages     = [
+        {"role": "system", "content": MARKET_POTENTIAL_CHAT_PROMPT},
+        {"role": "system", "content": context},
+        *data.history[-20:],
+        {"role": "user",   "content": data.message},
+    ]
+
+    def _on_complete(full_reply: str) -> Dict[str, Any]:
+        updated = data.history + [
+            {"role": "user",      "content": data.message},
+            {"role": "assistant", "content": full_reply},
+        ]
+        with SessionLocal() as s:
+            crud.save_market_potential(s, user_id, current_data, updated)
+        return {"chat_history_length": len(updated)}
+
+    return _sse_chat_stream(
+        messages=messages, groq_client=groq_client, groq_model=GROQ_MODEL,
+        temperature=0.4, max_tokens=1200, on_complete=_on_complete,
+    )
 
 
 @router.get("/market-potential/{user_id}", dependencies=[Depends(verify_api_key)])
@@ -856,6 +1114,42 @@ def chat_idea_strategy(data: SectionChatInput, db=Depends(get_db)):
         "reply":   reply,
         "chat_history_length": len(updated_history),
     }
+
+
+@router.post("/idea-strategy/{user_id}/chat/stream", dependencies=[Depends(verify_api_key)])
+def chat_idea_strategy_stream(data: SectionChatInput, db=Depends(get_db)) -> StreamingResponse:
+    """Streaming version of /idea-strategy/{user_id}/chat — tokens via SSE."""
+    strategy_row = crud.get_idea_strategy(db, data.user_id)
+    if not strategy_row:
+        raise HTTPException(status_code=425, detail="Idea strategy not generated yet.")
+
+    import json as _json
+    from agents.PipelineRunner import groq_client, GROQ_MODEL
+    from System_Messages.idea_strategy_prompt import IDEA_STRATEGY_CHAT_PROMPT
+
+    current_data = strategy_row.data
+    user_id      = data.user_id
+    context      = "=== CURRENT IDEA STRATEGY ===\n" + _json.dumps(current_data, indent=2)
+    messages     = [
+        {"role": "system", "content": IDEA_STRATEGY_CHAT_PROMPT},
+        {"role": "system", "content": context},
+        *data.history[-20:],
+        {"role": "user",   "content": data.message},
+    ]
+
+    def _on_complete(full_reply: str) -> Dict[str, Any]:
+        updated = data.history + [
+            {"role": "user",      "content": data.message},
+            {"role": "assistant", "content": full_reply},
+        ]
+        with SessionLocal() as s:
+            crud.save_idea_strategy(s, user_id, current_data, updated)
+        return {"chat_history_length": len(updated)}
+
+    return _sse_chat_stream(
+        messages=messages, groq_client=groq_client, groq_model=GROQ_MODEL,
+        temperature=0.4, max_tokens=1200, on_complete=_on_complete,
+    )
 
 
 @router.get("/idea-strategy/{user_id}", dependencies=[Depends(verify_api_key)])
