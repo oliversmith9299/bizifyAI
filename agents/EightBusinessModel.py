@@ -1,8 +1,350 @@
-# This agent designs how the startup will create, deliver, and capture value.
-# It should define revenue streams, pricing logic, cost structure, and key partners.
-# It explains the business model type and why it fits the customer and market.
-# It should test whether the model is realistic for the founder's skills, budget, and stage.
-# Its output should prepare the idea for unit economics and go-to-market planning.
-# It should also support a small refinement chat for this section only.
-# If the user asks for something different, regenerate the business model with their prompt.
-#8 Business Model Agent
+"""
+agents/EightBusinessModel.py
+=============================
+Pipeline step 8 — Business Model Design.
+
+Inputs  : idea + problems + customers + competition + market_potential +
+          idea_strategy (all from DB)
+Outputs : business_model_type, Business Model Canvas (all 9 blocks),
+          revenue_streams, pricing_strategy, key_metrics,
+          business_model_risks, founder_fit_assessment, summary
+
+Search strategy:
+  Real pricing benchmarks are critical here — the LLM confabulates numbers.
+  Searches target: similar companies' pricing pages, competitor take-rates,
+  platform fee comparisons, and industry revenue model case studies.
+
+Also exposes a section-scoped refinement chat and a streaming chat variant.
+
+DB flow:
+  run_business_model() → saves to business_model_results + agent_runs
+  chat_business_model() → stateless; history managed by the caller
+"""
+
+import json
+import logging
+import os
+import time
+
+from dotenv import load_dotenv
+from openai import OpenAI
+
+from agents.utils import gather_sources, parse_llm_json, truncate_sources
+from db.connection import SessionLocal
+from db import crud
+from System_Messages.business_model_prompt import (
+    BUSINESS_MODEL_PROMPT,
+    BUSINESS_MODEL_CHAT_PROMPT,
+)
+
+load_dotenv()
+
+log = logging.getLogger(__name__)
+
+GROQ_API_KEY   = os.getenv("GROQ_API_KEY")
+GROQ_API_BASE  = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
+GROQ_MODEL     = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+SERPER_API_KEY = os.getenv("SERPER_API_KEY")
+
+if not GROQ_API_KEY:
+    raise RuntimeError("GROQ_API_KEY is not set.")
+
+client = OpenAI(api_key=GROQ_API_KEY, base_url=GROQ_API_BASE)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Query builder
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_search_queries(
+    idea: str,
+    strategy: dict,
+    competition: dict,
+    region: str,
+) -> list[str]:
+    """
+    Build business-model-focused queries targeting real pricing data,
+    comparable platform fees, and revenue model benchmarks.
+    """
+    region_mod = region.strip() if region and region.lower() != "global" else ""
+    idea_seed  = " ".join(idea.split()[:6]) if idea else ""
+
+    bm_type = strategy.get("differentiation_strategy", {}).get("approach", "")
+
+    # Extract competitor names for pricing benchmarks
+    competitor_names = [
+        c.get("name", "")
+        for c in competition.get("direct_competitors", [])[:3]
+        if c.get("name")
+    ]
+
+    queries: list[str] = []
+
+    # Pricing and revenue model queries — highest value
+    queries.append(f"{idea_seed} pricing model revenue {region_mod}".strip())
+    queries.append(f"{idea_seed} business model how do they make money".strip())
+    queries.append(f"marketplace commission rate {idea_seed}".strip())
+    queries.append(f"{idea_seed} subscription pricing {region_mod}".strip())
+
+    # Competitor pricing pages
+    for name in competitor_names:
+        queries.append(f"{name} pricing fees commission rate")
+        queries.append(f"{name} business model revenue")
+
+    # Industry cost benchmarks
+    queries.append(f"{idea_seed} cost structure startup {region_mod}".strip())
+    queries.append(f"{bm_type} business model examples {idea_seed}".strip() if bm_type else "")
+    queries.append(f"how much does it cost to run {idea_seed} marketplace".strip())
+
+    return [q for q in queries if q][:12]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Context builder
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_analysis_context(
+    idea: str,
+    problems: dict,
+    customers: dict,
+    competition: dict,
+    market_potential: dict,
+    strategy: dict,
+    region: str,
+    sources: list,
+    source_mode: str,
+) -> str:
+    parts = [
+        "=== SAVED IDEA ===",
+        idea.strip(),
+        f"Region: {region or 'Global'}",
+        "",
+    ]
+
+    # Strategy signals — the most important input for business model design
+    if strategy:
+        vp = strategy.get("value_proposition", {})
+        diff = strategy.get("differentiation_strategy", {})
+        parts += [
+            "=== STRATEGY SNAPSHOT ===",
+            f"  Value prop : {vp.get('statement', '')}",
+            f"  Core promise: {strategy.get('core_promise', '')}",
+            f"  Approach   : {diff.get('approach', '')}",
+        ]
+        for d in diff.get("key_differentiators", [])[:3]:
+            parts.append(f"  Differentiator: {d}")
+
+    # Customer snapshot — drives revenue stream design
+    if customers:
+        primary = customers.get("primary_segment", {})
+        pid     = primary.get("id", "")
+        parts += ["", "=== CUSTOMER SNAPSHOT ==="]
+        for seg in customers.get("customer_segments", []):
+            marker = "★ PRIMARY" if seg.get("id") == pid else "  "
+            parts.append(
+                f"{marker} [{seg.get('id')}] {seg.get('name','')} — "
+                f"WTP: {seg.get('willingness_to_pay','?')}, "
+                f"size: {seg.get('size_estimate','?')}"
+            )
+        ea = customers.get("early_adopter_profile", "")
+        if ea:
+            parts.append(f"  Early adopter: {ea}")
+
+    # Competition — competitor pricing benchmarks
+    if competition:
+        parts += ["", "=== COMPETITOR PRICING BENCHMARKS ==="]
+        for c in competition.get("direct_competitors", [])[:3]:
+            parts.append(
+                f"  {c.get('name','')} — model: {c.get('pricing_model','?')}"
+            )
+        for gap in competition.get("positioning_gaps", [])[:2]:
+            parts.append(f"  Gap to exploit: {gap.get('opportunity','')}")
+
+    # Market potential — sets scale expectations
+    if market_potential:
+        som = market_potential.get("som", {})
+        parts += [
+            "",
+            "=== MARKET SCALE ===",
+            f"  SOM: {som.get('value','')} {som.get('unit','')} "
+            f"over {som.get('timeline','')}",
+            f"  Attractiveness: {market_potential.get('opportunity_attractiveness','?')}",
+        ]
+
+    # Top problems — inform channel and key activity choices
+    parts += ["", "=== TOP PROBLEMS (shape key activities) ==="]
+    for p in problems.get("problems", [])[:3]:
+        parts.append(f"  [{p.get('id','?')}] {p.get('title','')}")
+
+    # Web research — pricing and cost benchmarks
+    if sources:
+        parts += ["", f"=== WEB RESEARCH ({len(sources)} sources — use for real pricing data) ==="]
+        for s in sources:
+            parts.append(f"[{s['url']}]\n{s['content'][:600]}")
+    else:
+        parts += [
+            "",
+            f"=== SOURCE MODE: {source_mode} ===",
+            "No web sources. Use reasonable estimates — label them clearly as estimates.",
+        ]
+
+    return "\n".join(parts)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main analysis function
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_business_model(
+    user_id: str,
+    idea: str,
+    problems: dict,
+    customers: dict = None,
+    competition: dict = None,
+    market_potential: dict = None,
+    strategy: dict = None,
+    custom_prompt: str = None,
+) -> dict:
+    """
+    Design the business model for the saved idea.
+
+    Steps:
+      1. Extract region and competitor names from prior analysis
+      2. Search for real pricing benchmarks and competitor revenue models
+      3. Build enriched LLM context from all pipeline data + web sources
+      4. Call LLM → parse JSON → save to DB
+
+    Parameters
+    ----------
+    user_id          : str  — for DB persistence
+    idea             : str  — saved idea text
+    problems         : dict — ProblemDiscovery output
+    customers        : dict — FourCustomersAgent output (optional)
+    competition      : dict — FiveCompetitionAgent output (optional)
+    market_potential : dict — SixMaketPotential output (optional)
+    strategy         : dict — SevenIdeaStrategy output (optional)
+    custom_prompt    : str  — extra instruction for regenerate-custom
+    """
+    start = time.time()
+
+    # Infer region from market_potential or customers
+    region = "Global"
+    if market_potential:
+        region = market_potential.get("target_region", region)
+    elif customers:
+        for seg in customers.get("customer_segments", []):
+            desc = (seg.get("description", "") + seg.get("size_estimate", "")).lower()
+            for kw in ["mena", "egypt", "saudi", "uae", "gulf"]:
+                if kw in desc:
+                    region = kw.upper()
+                    break
+            if region != "Global":
+                break
+
+    # ── 1. Search ────────────────────────────────────────────────────────────
+    sources: list = []
+    source_mode   = "llm_derived"
+
+    if SERPER_API_KEY:
+        queries = _build_search_queries(idea, strategy or {}, competition or {}, region)
+        sources = gather_sources(queries, SERPER_API_KEY, max_sources=10)
+        source_mode = "web_sourced" if sources else "llm_derived"
+    else:
+        log.warning("SERPER_API_KEY not set — using LLM estimates for business model")
+
+    # ── 2. Build prompt ──────────────────────────────────────────────────────
+    sources = truncate_sources(sources)
+    context = _build_analysis_context(
+        idea, problems,
+        customers or {}, competition or {},
+        market_potential or {}, strategy or {},
+        region, sources, source_mode,
+    )
+
+    user_content = context
+    if custom_prompt:
+        user_content += f"\n\n=== ADDITIONAL INSTRUCTION ===\n{custom_prompt}"
+
+    # ── 3. LLM call ──────────────────────────────────────────────────────────
+    response = client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=[
+            {"role": "system", "content": BUSINESS_MODEL_PROMPT},
+            {"role": "user",   "content": user_content},
+        ],
+        temperature=0.3,   # lower for consistent numbers
+        max_tokens=4000,
+    )
+
+    raw    = response.choices[0].message.content
+    result = parse_llm_json(raw)
+    result["source_mode"]  = source_mode
+    result["sources_used"] = len(sources)
+
+    # ── 4. Persist ───────────────────────────────────────────────────────────
+    elapsed_ms = int((time.time() - start) * 1000)
+
+    db = SessionLocal()
+    try:
+        crud.save_business_model(db, user_id, result)
+        crud.save_agent_run(
+            db,
+            user_id=user_id,
+            agent_name="EightBusinessModel",
+            input_data={
+                "idea_snippet":       idea[:300],
+                "region":             region,
+                "has_customers":      customers is not None,
+                "has_competition":    competition is not None,
+                "has_market":         market_potential is not None,
+                "has_strategy":       strategy is not None,
+                "source_mode":        source_mode,
+                "sources_used":       len(sources),
+            },
+            output_data=result,
+            status="done",
+            execution_time_ms=elapsed_ms,
+        )
+    finally:
+        db.close()
+
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section refinement chat  (stateless — caller owns history)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def chat_business_model(
+    current_analysis: dict,
+    user_message: str,
+    history: list,
+) -> str:
+    """
+    Refine the business model through conversation.
+    Scoped to this section only — cannot modify any other pipeline data.
+
+    Returns
+    -------
+    str — assistant reply (may contain a ```json block with updated sections)
+    """
+    context = (
+        "=== CURRENT BUSINESS MODEL ===\n"
+        + json.dumps(current_analysis, indent=2)
+    )
+
+    messages = [
+        {"role": "system", "content": BUSINESS_MODEL_CHAT_PROMPT},
+        {"role": "system", "content": context},
+        *history[-20:],
+        {"role": "user",   "content": user_message},
+    ]
+
+    response = client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=messages,
+        temperature=0.4,
+        max_tokens=1200,
+    )
+
+    return response.choices[0].message.content.strip()

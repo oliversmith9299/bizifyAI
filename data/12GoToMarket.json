@@ -1,0 +1,218 @@
+{
+  "target_launch_segment": {
+    "segment_name": "Art students at large urban universities in Egypt",
+    "why_first": "Highest pain intensity, most reachable via university partnerships and Instagram, and strongest word-of-mouth potential within tight campus communities. Concentrated geographically — easier to serve and support in early weeks.",
+    "size_estimate": "~80,000 art students across Cairo, Alexandria, and Giza universities",
+    "beachhead_cities": ["Cairo", "Alexandria"]
+  },
+  "positioning_message": {
+    "headline": "Quality art supplies. Delivered locally. From verified sellers you can trust.",
+    "subheadline": "No more waiting 3 weeks for international shipping or settling for low-quality local options.",
+    "proof_points": [
+      "Every seller verified by our team before going live",
+      "Fawry and Mada payments — no international card needed",
+      "WhatsApp support that responds within 1 hour"
+    ],
+    "tone": "Warm, community-first, practical — not corporate or luxury",
+    "arabic_headline": "لوازم فنية أصيلة، توصيل محلي، من بائعين موثوقين."
+  },
+  "marketing_channels": [
+    {
+      "channel": "Instagram organic content",
+      "role": "Primary brand and product discovery channel",
+      "weekly_effort_hours": 5,
+      "monthly_cost_usd": 0,
+      "target_metric": "500 followers by month 2, 3% engagement rate",
+      "content_types": ["Product showcase reels", "Artist spotlight stories", "Behind-the-scenes supplier visits"],
+      "is_paid": false
+    },
+    {
+      "channel": "WhatsApp outreach (DM campaigns)",
+      "role": "High-conversion direct channel for early adopters",
+      "weekly_effort_hours": 3,
+      "monthly_cost_usd": 0,
+      "target_metric": "30 DMs per week, 15% conversion to first purchase",
+      "content_types": ["Personal intro message", "Product showcase", "First-order discount offer"],
+      "is_paid": false
+    },
+    {
+      "channel": "University art club partnerships",
+      "role": "Referral channel with built-in trust and community",
+      "weekly_effort_hours": 2,
+      "monthly_cost_usd": 0,
+      "target_metric": "2 signed partnerships by end of month 1, 20 referral orders from each",
+      "content_types": ["Partnership agreement", "Exclusive discount code", "Classroom demonstration"],
+      "is_paid": false
+    },
+    {
+      "channel": "Instagram paid ads",
+      "role": "Scale channel after organic proves messaging",
+      "weekly_effort_hours": 2,
+      "monthly_cost_usd": 100,
+      "target_metric": "CPC < $0.30, 5% landing page conversion",
+      "content_types": ["Product highlight carousel", "Customer testimonial reel", "Seasonal collection ad"],
+      "is_paid": true
+    }
+  ],
+  "funnel_stages": [
+    {
+      "stage": "Awareness",
+      "description": "Target customer discovers the platform exists",
+      "channels": ["Instagram organic", "University referral", "WhatsApp DM"],
+      "key_action": "Follows Instagram or clicks profile link",
+      "conversion_target_pct": null,
+      "metric": "Instagram impressions + link-in-bio clicks per week"
+    },
+    {
+      "stage": "Consideration",
+      "description": "Potential buyer explores the catalogue and seller profiles",
+      "channels": ["Marketplace website", "Instagram highlights"],
+      "key_action": "Browses products, views seller profile, reads reviews",
+      "conversion_target_pct": 30,
+      "metric": "Catalogue page views, avg session duration > 90 seconds"
+    },
+    {
+      "stage": "Conversion",
+      "description": "Buyer completes their first purchase",
+      "channels": ["Marketplace checkout", "WhatsApp order confirmation"],
+      "key_action": "Adds to cart → selects payment → confirms order",
+      "conversion_target_pct": 8,
+      "metric": "Add-to-cart → purchase conversion rate"
+    },
+    {
+      "stage": "Retention",
+      "description": "Buyer returns for a second purchase within 30 days",
+      "channels": ["WhatsApp re-engagement", "Email newsletter"],
+      "key_action": "Opens re-engagement message and clicks back to marketplace",
+      "conversion_target_pct": 25,
+      "metric": "30-day repeat purchase rate"
+    },
+    {
+      "stage": "Referral",
+      "description": "Satisfied buyer refers a friend or university peer",
+      "channels": ["WhatsApp group share", "Instagram story mention"],
+      "key_action": "Shares referral link or organic word-of-mouth recommendation",
+      "conversion_target_pct": 15,
+      "metric": "Referral orders as % of total orders"
+    }
+  ],
+  "launch_experiments": [
+    {
+      "id": "GTM1",
+      "name": "University DM blitz",
+      "hypothesis": "Sending personalised WhatsApp messages to 50 art students in week 1 will generate 8+ orders",
+      "method": "Identify 50 art students on Instagram. Send a short personal message with a first-order discount. Track who orders.",
+      "success_metric": "8+ completed orders from 50 DMs",
+      "timeline": "Week 1",
+      "budget_usd": 0
+    },
+    {
+      "id": "GTM2",
+      "name": "Instagram reel product showcase",
+      "hypothesis": "A 30-second reel showing the unboxing of a verified art supply order gets 3%+ link-in-bio click rate",
+      "method": "Post 3 product reels in week 2. Use a tracked link-in-bio URL. Measure clicks per reel.",
+      "success_metric": "Average link-in-bio CTR > 3% across 3 reels",
+      "timeline": "Week 2",
+      "budget_usd": 0
+    },
+    {
+      "id": "GTM3",
+      "name": "University club exclusive discount",
+      "hypothesis": "Offering a university art club a 10% group discount will generate 15+ orders from their members",
+      "method": "Partner with 1 university art club. Give their members an exclusive code. Track redemptions.",
+      "success_metric": "15+ code redemptions within 2 weeks of partnership",
+      "timeline": "Week 3-4",
+      "budget_usd": 0
+    },
+    {
+      "id": "GTM4",
+      "name": "First paid Instagram ad",
+      "hypothesis": "A $50 Instagram ad targeting Cairo 18-30 art interests gets 20+ clicks at < $2.50 CPC",
+      "method": "Run 1 Instagram ad for 5 days at $10/day. Target Cairo, interests: art, painting, design. Single product showcase.",
+      "success_metric": "20+ link clicks, CPC < $2.50",
+      "timeline": "Week 5",
+      "budget_usd": 50
+    }
+  ],
+  "first_100_customers_plan": {
+    "target_timeline": "8 weeks",
+    "weekly_breakdown": [
+      {"week": "1-2", "target_customers": 15, "primary_action": "50 WhatsApp DMs to art students + 5 seller onboarding sessions"},
+      {"week": "3-4", "target_customers": 30, "primary_action": "University art club partnerships (2 clubs) + Instagram reel launch"},
+      {"week": "5-6", "target_customers": 30, "primary_action": "First $50 Instagram ad + WhatsApp re-engagement of week 1-4 buyers"},
+      {"week": "7-8", "target_customers": 25, "primary_action": "Referral programme launch (give $5 credit for each referred friend who orders)"}
+    ],
+    "total_estimated_budget_usd": 150,
+    "key_actions": [
+      "Build a list of 200 art students on Instagram before week 1",
+      "Prepare 3 seller product videos before launch",
+      "Write 5 personalised DM templates for different buyer types",
+      "Sign 2 university club partnerships in week 1",
+      "Set up a simple WhatsApp broadcast list for weekly new arrivals"
+    ]
+  },
+  "launch_timeline": [
+    {"week": 1,  "focus": "Seller setup complete. First 5 sellers live. 50 WhatsApp DMs sent.", "goal": "5 orders"},
+    {"week": 2,  "focus": "3 Instagram reels posted. University outreach started.", "goal": "10 orders cumulative"},
+    {"week": 3,  "focus": "First university club partnership signed. Exclusive discount live.", "goal": "20 orders cumulative"},
+    {"week": 4,  "focus": "WhatsApp re-engagement of all previous buyers. 2nd university club.", "goal": "35 orders cumulative"},
+    {"week": 5,  "focus": "First $50 Instagram ad. Referral programme announced.", "goal": "50 orders cumulative"},
+    {"week": 6,  "focus": "Onboard 3 more sellers based on demand gaps. Feature 5 products.", "goal": "65 orders cumulative"},
+    {"week": 7,  "focus": "Referral programme fully live. Weekly new arrivals broadcast.", "goal": "80 orders cumulative"},
+    {"week": 8,  "focus": "Review all metrics. Decide which channel to double down on.", "goal": "100 orders cumulative"}
+  ],
+  "success_metrics": {
+    "week_4_targets": {
+      "cumulative_orders": 35,
+      "active_sellers": 8,
+      "instagram_followers": 300,
+      "avg_order_value_usd": 38,
+      "repeat_purchase_rate_pct": 20
+    },
+    "week_8_targets": {
+      "cumulative_orders": 100,
+      "active_sellers": 12,
+      "instagram_followers": 600,
+      "avg_order_value_usd": 40,
+      "repeat_purchase_rate_pct": 25,
+      "blended_cac_usd": 10
+    },
+    "kill_metrics": [
+      "Fewer than 15 orders by end of week 4 — messaging or channel is wrong",
+      "Add-to-cart → purchase conversion below 3% after 50 catalogue visits",
+      "More than 3 sellers request to leave in first 6 weeks"
+    ]
+  },
+  "cac_tracking": {
+    "tracking_method": "UTM parameters on all links + manual order source tagging in Notion",
+    "by_channel": [
+      {"channel": "WhatsApp DM", "orders_from_channel": "tag in order notes", "spend_usd": 0, "target_cac_usd": 3},
+      {"channel": "University referral", "orders_from_channel": "referral code tracking", "spend_usd": 0, "target_cac_usd": 2},
+      {"channel": "Instagram organic", "orders_from_channel": "link-in-bio UTM", "spend_usd": 0, "target_cac_usd": 5},
+      {"channel": "Instagram paid", "orders_from_channel": "Instagram ad tracking", "spend_usd": 100, "target_cac_usd": 20}
+    ],
+    "weekly_review": "Every Monday: calculate orders per channel vs spend. Double down on channels with CAC < $10.",
+    "blended_cac_formula": "Total marketing spend / total new customers acquired in the same period"
+  },
+  "feedback_loops": [
+    {
+      "trigger": "After every completed order",
+      "method": "WhatsApp voice note request — 'Can you send me a 30-second voice note about your order?'",
+      "what_to_capture": "Product quality, delivery speed, payment experience, overall satisfaction",
+      "action": "Log to Notion. Fix any issue mentioned by 2+ buyers within 1 week."
+    },
+    {
+      "trigger": "After 7 days of no re-order",
+      "method": "WhatsApp message: 'Hey [name], what would make you order again?'",
+      "what_to_capture": "Price sensitivity, product range gaps, platform friction",
+      "action": "Add top 3 requested product categories to seller onboarding wishlist"
+    },
+    {
+      "trigger": "After seller's first 30 days",
+      "method": "15-minute WhatsApp voice call with founder",
+      "what_to_capture": "Platform ease of use, order volume satisfaction, payment timing, support quality",
+      "action": "Fix any process issues. Use feedback to improve seller onboarding guide."
+    }
+  ],
+  "summary": "The GTM strategy is community-first and manual for weeks 1-8: WhatsApp DMs, university partnerships, and Instagram organic content — all at under $150 total spend. Paid Instagram ads enter only in week 5 after organic messaging is validated. Four experiments in weeks 1-5 progressively test channel viability before any budget commitment. CAC is tracked per channel from day 1 using UTM tags and Notion, with a Monday review ritual. The three kill metrics tell the founder when to pivot channel strategy rather than continuing to invest in what isn't working."
+}

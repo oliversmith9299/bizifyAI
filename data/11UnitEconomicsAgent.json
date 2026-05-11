@@ -1,0 +1,118 @@
+{
+  "revenue_model_summary": "Commission-based B2C marketplace: 12% take rate on GMV, supplemented by featured listing fees ($15/7 days) and seller premium subscriptions ($29/month).",
+  "pricing_assumptions": {
+    "average_order_value_usd": 38,
+    "commission_rate_pct": 12,
+    "avg_monthly_orders_per_buyer": 1.4,
+    "avg_monthly_active_buyers_month_6": 120,
+    "avg_seller_subscription_take_rate_pct": 15,
+    "featured_listing_slots_per_month": 60
+  },
+  "cost_assumptions": {
+    "fixed_monthly_usd": 127,
+    "variable_cost_pct_of_gmv": 2.5,
+    "cac_paid_usd": 18,
+    "cac_organic_usd": 4,
+    "organic_to_paid_ratio": "70:30",
+    "avg_blended_cac_usd": 8.6
+  },
+  "gross_margin": {
+    "revenue_per_transaction_usd": 4.56,
+    "payment_gateway_fee_usd": 0.95,
+    "gross_profit_per_transaction_usd": 3.61,
+    "gross_margin_pct": 79.2,
+    "note": "High margin typical of asset-light marketplace — no inventory held"
+  },
+  "cac_analysis": {
+    "blended_cac_usd": 8.6,
+    "paid_cac_usd": 18,
+    "organic_cac_usd": 4,
+    "primary_acquisition_channel": "Instagram organic content + university DM outreach",
+    "cac_benchmark_comparison": "E-commerce CAC in MENA typically $15-40. Our blended $8.60 is achievable through community-first approach.",
+    "cac_trend": "Expected to rise to $12-15 as organic reach scales down — acceptable if LTV holds"
+  },
+  "ltv_analysis": {
+    "avg_customer_lifespan_months": 14,
+    "avg_monthly_revenue_per_buyer_usd": 6.38,
+    "ltv_usd": 89.3,
+    "ltv_calculation": "38 AOV × 12% commission × 1.4 orders/month × 14 months = $89.30",
+    "churn_rate_monthly_pct": 7,
+    "churn_assumption_note": "7% monthly churn estimated for niche hobby marketplace; benchmarked against Etsy seller data and MENA e-commerce averages"
+  },
+  "ltv_cac_ratio": {
+    "ratio": 10.4,
+    "interpretation": "Healthy — industry standard is >3x. At 10.4x, the business has strong unit economics even with CAC growth.",
+    "target_ratio": 5.0,
+    "is_viable": true
+  },
+  "payback_period": {
+    "months": 1.35,
+    "interpretation": "Buyer pays back acquisition cost in under 2 months. Very fast payback for a marketplace — allows reinvestment quickly.",
+    "calculation": "CAC $8.60 / monthly revenue per buyer $6.38 = 1.35 months"
+  },
+  "break_even": {
+    "monthly_fixed_cost_usd": 127,
+    "revenue_per_buyer_per_month_usd": 6.38,
+    "buyers_needed_to_break_even": 20,
+    "gmv_needed_to_break_even_usd": 1058,
+    "timeline_to_break_even": "Month 2-3 (targeting 50 active buyers by month 2)",
+    "note": "Very low break-even threshold — a strength of the no-code, low-overhead model"
+  },
+  "monthly_projections": [
+    {"month": 1, "active_buyers": 25,  "gmv_usd": 1330,  "revenue_usd": 320,  "costs_usd": 160,  "profit_usd": 160},
+    {"month": 2, "active_buyers": 50,  "gmv_usd": 2660,  "revenue_usd": 640,  "costs_usd": 194,  "profit_usd": 446},
+    {"month": 3, "active_buyers": 80,  "gmv_usd": 4256,  "revenue_usd": 1021, "costs_usd": 234,  "profit_usd": 787},
+    {"month": 6, "active_buyers": 120, "gmv_usd": 6384,  "revenue_usd": 1533, "costs_usd": 287,  "profit_usd": 1246},
+    {"month": 12, "active_buyers": 220, "gmv_usd": 11704, "revenue_usd": 2809, "costs_usd": 420, "profit_usd": 2389}
+  ],
+  "weak_assumptions": [
+    {
+      "assumption": "1.4 orders per buyer per month",
+      "risk": "Hobby buyers may order seasonally — actual rate could be 0.8/month",
+      "impact_if_wrong": "LTV drops to $51 — LTV/CAC still 5.9x, still viable",
+      "test": "Track repeat purchase rate of first 50 buyers over 60 days"
+    },
+    {
+      "assumption": "7% monthly churn",
+      "risk": "Without community features, churn could reach 12-15% as novelty fades",
+      "impact_if_wrong": "LTV drops to $46 at 12% churn — LTV/CAC = 5.3x, still acceptable",
+      "test": "Send re-engagement WhatsApp message to buyers who haven't ordered in 30 days"
+    },
+    {
+      "assumption": "Blended CAC of $8.60",
+      "risk": "As organic channel saturates, blended CAC could rise to $20+",
+      "impact_if_wrong": "LTV/CAC drops to 4.5x at $20 CAC — still above 3x threshold",
+      "test": "Track cost per acquired buyer by channel from day 1"
+    }
+  ],
+  "pricing_tests": [
+    {
+      "test": "Commission rate sensitivity",
+      "hypothesis": "Sellers will accept 12% commission if the platform provides verified badge and analytics",
+      "method": "Onboard first 10 sellers at 8%, then raise to 12% for sellers onboarded from month 2. Compare retention.",
+      "success_metric": "Less than 20% seller churn after rate increase"
+    },
+    {
+      "test": "Featured listing price point",
+      "hypothesis": "Sellers will pay $15 for 7-day featured placement if it generates 3x more views",
+      "method": "Offer 3 featured slots for free in month 1, measure view uplift, then charge $15 from month 2.",
+      "success_metric": "30% of eligible sellers purchase a featured slot in month 2"
+    },
+    {
+      "test": "Premium seller subscription",
+      "hypothesis": "Top 20% of sellers will pay $29/month for analytics and priority support",
+      "method": "Identify top 5 sellers by GMV in month 2. Offer 1-month free trial, then charge.",
+      "success_metric": "3 of 5 sellers convert to paid after free trial"
+    }
+  ],
+  "overall_viability": {
+    "is_economically_viable": true,
+    "confidence_level": "medium",
+    "viability_reasoning": "Unit economics are strong even under pessimistic scenarios. LTV/CAC stays above 4x in all stress tests. Break-even at 20 buyers is achievable by month 2. The biggest risk is CAC growth as organic channels scale — manage this by tracking CAC by channel from day 1.",
+    "red_flags": [
+      "If blended CAC exceeds $30, the economics require rethinking — either raise AOV target or improve retention",
+      "If monthly churn exceeds 15%, add community features earlier than planned"
+    ]
+  },
+  "summary": "The unit economics are healthy for a bootstrapped no-code marketplace at this stage. A blended CAC of $8.60, LTV of $89.30, and 1.35-month payback period give a 10.4x LTV/CAC ratio — well above the 3x minimum. Break-even requires only 20 active buyers, achievable by month 2. The three weakest assumptions (repeat order rate, churn, and CAC growth) all survive stress-testing with LTV/CAC staying above 4x. The most important early metric to track is monthly repeat purchase rate."
+}

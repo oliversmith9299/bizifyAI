@@ -1,0 +1,204 @@
+{
+  "mvp_goal": "Prove that MENA art buyers will pay for curated, locally-delivered art supplies from verified sellers on a simple marketplace — before building any community or premium features.",
+  "riskiest_assumptions": [
+    {
+      "id": "A1",
+      "assumption": "MENA art buyers will pay a 12% premium for verified local curation over cheaper unverified alternatives",
+      "risk_level": "high",
+      "validation_method": "Run 20 WhatsApp conversations asking buyers to complete a real purchase. Target: 5+ completed orders in week 1.",
+      "kill_signal": "Fewer than 3 completed orders after 30 outreach conversations"
+    },
+    {
+      "id": "A2",
+      "assumption": "Local art supply sellers in MENA are willing to onboard onto a curated platform and meet quality standards",
+      "risk_level": "high",
+      "validation_method": "Contact 20 local sellers via Instagram DM. Target: 5 express serious interest and submit the Typeform application.",
+      "kill_signal": "Fewer than 3 seller applications after 20 outreach attempts"
+    },
+    {
+      "id": "A3",
+      "assumption": "Buyers in Egypt and KSA will complete checkout using local payment methods (Fawry, Mada) on an unfamiliar platform",
+      "risk_level": "medium",
+      "validation_method": "Simulate a real purchase with 5 willing buyers. Measure drop-off at payment step.",
+      "kill_signal": "More than 60% of buyers abandon at payment — indicates payment method mismatch"
+    }
+  ],
+  "scope": {
+    "included": [
+      "Seller listing and product catalogue (Sharetribe)",
+      "Secure checkout with Stripe (cards) and Fawry/Paymob (local)",
+      "Seller onboarding via Typeform + manual verification by founder",
+      "Order status notifications via WhatsApp Business",
+      "Basic seller analytics via Sharetribe dashboard"
+    ],
+    "excluded": [
+      "Creator community profiles and following — wait for 200 active buyers",
+      "Peer critique circles — wait for 50 active creator profiles",
+      "Monthly subscription box — wait for month 4+ and $10K GMV",
+      "B2B school supply channel — year 2 feature",
+      "Mobile app — web-optimised Sharetribe is sufficient for 18 months",
+      "Custom chat system — WhatsApp handles all communication needs",
+      "AI-powered product recommendations — requires significant data first"
+    ]
+  },
+  "core_user_flows": [
+    {
+      "id": "UF1",
+      "name": "Buyer discovery and purchase",
+      "steps": [
+        "Buyer discovers platform via Instagram post or university referral",
+        "Browses curated catalogue filtered by medium (watercolour, oil, etc.)",
+        "Reads verified seller profile and product reviews",
+        "Adds item to cart and selects local payment method",
+        "Receives WhatsApp confirmation within 5 minutes",
+        "Seller fulfils order; buyer gets delivery status updates via WhatsApp"
+      ],
+      "success_metric": "Order completed end-to-end in under 10 minutes from landing"
+    },
+    {
+      "id": "UF2",
+      "name": "Seller onboarding",
+      "steps": [
+        "Seller discovers platform via DM outreach or word of mouth",
+        "Completes Typeform application with product samples and business details",
+        "Founder reviews within 48 hours, approves or requests changes",
+        "Seller receives Sharetribe login and Verified badge",
+        "Seller lists first 5 products with founder guidance via WhatsApp"
+      ],
+      "success_metric": "Seller goes from application to first live listing within 72 hours"
+    }
+  ],
+  "build_plan": {
+    "phases": [
+      {
+        "phase": 1,
+        "name": "Setup and seller supply (week 1-2)",
+        "tasks": [
+          "Configure Sharetribe marketplace with branding and categories",
+          "Set up Typeform seller application form",
+          "Onboard first 5 verified sellers and help them list products",
+          "Connect Paymob/Fawry for local payments",
+          "Set up WhatsApp Business API for order notifications"
+        ],
+        "milestone": "5 verified sellers live with at least 20 products listed"
+      },
+      {
+        "phase": 2,
+        "name": "First buyers and validation (week 3-4)",
+        "tasks": [
+          "Launch Instagram content (3 posts per week showcasing products)",
+          "Reach out to 10 university art clubs with free delivery offer",
+          "Run WhatsApp outreach to 30 known art-interested contacts",
+          "Complete first 10 orders end-to-end",
+          "Collect feedback from every buyer via WhatsApp voice note"
+        ],
+        "milestone": "10 completed orders, 3 repeat buyers, seller NPS > 7"
+      },
+      {
+        "phase": 3,
+        "name": "Iterate and stabilise (week 5-8)",
+        "tasks": [
+          "Fix top 3 friction points from buyer feedback",
+          "Onboard 5 more verified sellers based on demand gaps",
+          "Introduce featured listing fee for sellers who want visibility",
+          "Launch premium seller subscription to top 3 most active sellers",
+          "Set up Google Sheets seller analytics summary (monthly)"
+        ],
+        "milestone": "50 orders, $2,000 GMV, 2 sellers paying premium subscription"
+      }
+    ],
+    "total_timeline": "8 weeks from decision to first 50 orders",
+    "no_code_tools_needed": [
+      "Sharetribe (marketplace core)",
+      "Typeform (seller applications)",
+      "WhatsApp Business API via 360dialog",
+      "Zapier (connect Sharetribe to WhatsApp notifications)",
+      "Paymob or Fawry (local payments)",
+      "Canva (Instagram content)",
+      "Notion (operations and seller review pipeline)",
+      "Google Sheets (seller analytics)"
+    ]
+  },
+  "validation_experiments": [
+    {
+      "id": "E1",
+      "hypothesis": "30 WhatsApp outreach messages to art students will generate 5+ completed purchases",
+      "method": "Manual DM with a product link and discount code for the first order",
+      "success_metric": "5+ completed orders from 30 DMs",
+      "timeline": "Week 3",
+      "cost_usd": 0
+    },
+    {
+      "id": "E2",
+      "hypothesis": "Instagram product reels get 3%+ click-through to the marketplace",
+      "method": "Post 3 product showcase reels per week, track link-in-bio clicks",
+      "success_metric": "3% CTR on at least 2 of 6 reels in weeks 3-4",
+      "timeline": "Week 3-4",
+      "cost_usd": 50
+    },
+    {
+      "id": "E3",
+      "hypothesis": "Local art supply sellers will list products faster with WhatsApp onboarding guidance than with email",
+      "method": "Onboard 5 sellers via WhatsApp voice guidance vs 5 via email only",
+      "success_metric": "WhatsApp-guided sellers list first product in under 48 hours vs 72+ hours for email",
+      "timeline": "Week 1-2",
+      "cost_usd": 0
+    }
+  ],
+  "launch_criteria": {
+    "must_be_true": [
+      "At least 5 verified sellers live with 20+ products",
+      "Local payment (Fawry or Mada) successfully tested end-to-end",
+      "WhatsApp order notification working for buyer and seller",
+      "At least 3 real buyers have completed a purchase without founder assistance",
+      "No checkout bugs in mobile browser testing on Android and iOS"
+    ],
+    "success_metrics": [
+      "10 completed orders in first 4 weeks",
+      "Average order value > $25",
+      "Buyer satisfaction score (WhatsApp survey) > 4/5",
+      "Seller time-to-first-listing < 72 hours after approval"
+    ],
+    "kill_criteria": [
+      "Fewer than 5 orders after 6 weeks despite 50+ outreach conversations",
+      "More than 3 sellers leave after onboarding citing platform quality concerns",
+      "Payment failure rate > 30% on local payment methods after 2 fix attempts"
+    ]
+  },
+  "testing_plan": [
+    {
+      "area": "Checkout flow",
+      "method": "Have 5 beta buyers complete a real purchase on mobile and desktop",
+      "pass_criteria": "Zero blocking errors, order confirmed via WhatsApp within 5 minutes"
+    },
+    {
+      "area": "Payment methods",
+      "method": "Test Fawry, Mada, and card payment with real transactions (small amounts)",
+      "pass_criteria": "All three methods process successfully; no transaction errors"
+    },
+    {
+      "area": "Seller listing flow",
+      "method": "Founder completes the seller onboarding as a test account",
+      "pass_criteria": "First product listed within 30 minutes of receiving Sharetribe login"
+    },
+    {
+      "area": "WhatsApp notifications",
+      "method": "Place 5 test orders and verify notification delivery time",
+      "pass_criteria": "Notification arrives within 3 minutes of order placement"
+    }
+  ],
+  "qa_checklist": [
+    "Marketplace loads correctly on Chrome, Safari, and Firefox mobile",
+    "Product images display correctly at different resolutions",
+    "Seller verified badge appears on all seller profile pages",
+    "Fawry payment completes without error and triggers WhatsApp notification",
+    "Mada payment completes without error and triggers WhatsApp notification",
+    "Buyer receives order confirmation within 3 minutes",
+    "Seller receives new order notification within 3 minutes",
+    "Typeform seller application submits successfully and sends confirmation email",
+    "Search and filter by category returns correct results",
+    "Out-of-stock products show correctly and cannot be added to cart"
+  ],
+  "first_100_users_plan": "Weeks 1-4: manual outreach — 30 WhatsApp DMs to known art students plus 10 university art club partnerships. Weeks 5-8: Instagram content (3 posts/week) targeting MENA art hashtags plus 2 Instagram paid posts at $25 each. Goal: 100 registered buyers by end of week 8, 25% making at least one purchase.",
+  "summary": "The MVP scope is tight — 5 core functions in 8 weeks using only no-code tools at under $130/month. The three riskiest assumptions (buyer willingness to pay, seller supply, and local payment completion) all have specific kill signals so the founder knows when to pivot instead of continuing to invest. Launch criteria are binary and measurable. The first 100 users plan is manual and low-cost, validating organic channels before spending on paid acquisition."
+}

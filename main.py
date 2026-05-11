@@ -48,16 +48,26 @@ app.include_router(pipeline_router)
 # Platform tables (businesses, ideas, chat_sessions, etc.) are owned by the
 # backend — the AI service must NOT create or alter them.
 _AI_OWNED_TABLES = {
+    # Pipeline orchestration
     "pipeline_runs",
+    # Founder profiling
     "profile_results",
     "questionnaire_outputs",
     "problems_results",
+    # Idea discovery
     "idea_results",
     "idea_intake_results",
+    # Analysis sections (agents 4-12)
     "customers_results",
     "competition_results",
     "market_potential_results",
     "idea_strategy_results",
+    "business_model_results",
+    "functions_list_results",
+    "mvp_planning_results",
+    "unit_economics_results",
+    "go_to_market_results",
+    # Shared platform tables the AI writes to (schema PDF section 4)
     "agents",
     "agent_runs",
 }

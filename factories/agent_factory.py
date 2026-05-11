@@ -51,21 +51,24 @@ def get_agent_runner(agent_name: str) -> Callable:
         from agents.SevenIdeaStrategy import run_idea_strategy
         return run_idea_strategy
 
-    # Agents 8-12: return a stub that makes the gap obvious at runtime
-    _STUBS = {
-        "SevenIdeaStrategy",
-        "EightBusinessModel",
-        "NineFunctionsList",
-        "TenMVPPlanning",
-        "ElevenUnitEconomicsAgent",
-        "TwelveGoToMarket",
-    }
-    if agent_name in _STUBS:
-        def _not_implemented(*args, **kwargs):
-            raise NotImplementedError(
-                f"Agent '{agent_name}' is not implemented yet. "
-                "Create the agent file and register it in agent_factory.py."
-            )
-        return _not_implemented
+    if agent_name == "EightBusinessModel":
+        from agents.EightBusinessModel import run_business_model
+        return run_business_model
+
+    if agent_name == "NineFunctionsList":
+        from agents.NineFunctionsList import run_functions_list
+        return run_functions_list
+
+    if agent_name == "TenMVPPlanning":
+        from agents.TenMVPPlanning import run_mvp_planning
+        return run_mvp_planning
+
+    if agent_name == "ElevenUnitEconomicsAgent":
+        from agents.ElevenUnitEconomicsAgent import run_unit_economics
+        return run_unit_economics
+
+    if agent_name == "TwelveGoToMarket":
+        from agents.TwelveGoToMarket import run_go_to_market
+        return run_go_to_market
 
     raise KeyError(f"Unknown agent: '{agent_name}'")
