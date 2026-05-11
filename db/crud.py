@@ -15,35 +15,40 @@ from sqlalchemy.orm import Session
 from db.models import (
     Agent,
     AgentRun,
+    BusinessModelResult,
     CompetitionResult,
     CustomersResult,
+    FunctionsListResult,
+    GoToMarketResult,
     IdeaIntakeResult,
     IdeaResult,
     IdeaStrategyResult,
     MarketPotentialResult,
+    MVPPlanningResult,
     PipelineRun,
     ProfileResult,
     ProblemsResult,
     QuestionnaireOutput,
+    UnitEconomicsResult,
 )
 
 
 # Registry of all agents the AI service uses.
 # Keys must match the names stored in the `agents` DB table.
 AGENT_DEFINITIONS: dict[str, str] = {
-    "OneProfileAnalysis":      "discovery",
-    "TwoProblemDiscovery":     "discovery",
-    "ThreeIdeaIntakeAgent":    "discovery",
+    "OneProfileAnalysis":       "discovery",
+    "TwoProblemDiscovery":      "discovery",
+    "ThreeIdeaIntakeAgent":     "discovery",
     "ThreePersonalizeIdeaChat": "ideation",
-    "FourCustomersAgent":      "planning",
-    "FiveCompetitionAgent":    "planning",
-    "SixMaketPotential":       "planning",
-    "SevenIdeaStrategy":       "strategy",
-    "EightBusinessModel":      "business",
-    "NineFunctionsList":       "product",
-    "TenMVPPlanning":          "product",
+    "FourCustomersAgent":       "planning",
+    "FiveCompetitionAgent":     "planning",
+    "SixMaketPotential":        "planning",
+    "SevenIdeaStrategy":        "strategy",
+    "EightBusinessModel":       "business",
+    "NineFunctionsList":        "product",
+    "TenMVPPlanning":           "product",
     "ElevenUnitEconomicsAgent": "finance",
-    "TwelveGoToMarket":        "launch",
+    "TwelveGoToMarket":         "launch",
 }
 
 
@@ -403,4 +408,89 @@ def get_idea_strategy(db: Session, user_id: str) -> Optional[IdeaStrategyResult]
 
 def get_idea_strategy_json(db: Session, user_id: str) -> Optional[dict]:
     row = get_idea_strategy(db, user_id)
+    return row.data if row else None
+
+
+# Business model ──────────────────────────────────────────────────────────────
+
+def save_business_model(
+    db: Session, user_id: str, data: dict, chat_history: Optional[list] = None
+) -> BusinessModelResult:
+    return _save_section(db, user_id, BusinessModelResult, data, chat_history)
+
+
+def get_business_model(db: Session, user_id: str) -> Optional[BusinessModelResult]:
+    return db.query(BusinessModelResult).filter_by(user_id=user_id).first()
+
+
+def get_business_model_json(db: Session, user_id: str) -> Optional[dict]:
+    row = get_business_model(db, user_id)
+    return row.data if row else None
+
+
+# Functions list ──────────────────────────────────────────────────────────────
+
+def save_functions_list(
+    db: Session, user_id: str, data: dict, chat_history: Optional[list] = None
+) -> FunctionsListResult:
+    return _save_section(db, user_id, FunctionsListResult, data, chat_history)
+
+
+def get_functions_list(db: Session, user_id: str) -> Optional[FunctionsListResult]:
+    return db.query(FunctionsListResult).filter_by(user_id=user_id).first()
+
+
+def get_functions_list_json(db: Session, user_id: str) -> Optional[dict]:
+    row = get_functions_list(db, user_id)
+    return row.data if row else None
+
+
+# MVP planning ─────────────────────────────────────────────────────────────────
+
+def save_mvp_planning(
+    db: Session, user_id: str, data: dict, chat_history: Optional[list] = None
+) -> MVPPlanningResult:
+    return _save_section(db, user_id, MVPPlanningResult, data, chat_history)
+
+
+def get_mvp_planning(db: Session, user_id: str) -> Optional[MVPPlanningResult]:
+    return db.query(MVPPlanningResult).filter_by(user_id=user_id).first()
+
+
+def get_mvp_planning_json(db: Session, user_id: str) -> Optional[dict]:
+    row = get_mvp_planning(db, user_id)
+    return row.data if row else None
+
+
+# Unit economics ───────────────────────────────────────────────────────────────
+
+def save_unit_economics(
+    db: Session, user_id: str, data: dict, chat_history: Optional[list] = None
+) -> UnitEconomicsResult:
+    return _save_section(db, user_id, UnitEconomicsResult, data, chat_history)
+
+
+def get_unit_economics(db: Session, user_id: str) -> Optional[UnitEconomicsResult]:
+    return db.query(UnitEconomicsResult).filter_by(user_id=user_id).first()
+
+
+def get_unit_economics_json(db: Session, user_id: str) -> Optional[dict]:
+    row = get_unit_economics(db, user_id)
+    return row.data if row else None
+
+
+# Go-to-market ────────────────────────────────────────────────────────────────
+
+def save_go_to_market(
+    db: Session, user_id: str, data: dict, chat_history: Optional[list] = None
+) -> GoToMarketResult:
+    return _save_section(db, user_id, GoToMarketResult, data, chat_history)
+
+
+def get_go_to_market(db: Session, user_id: str) -> Optional[GoToMarketResult]:
+    return db.query(GoToMarketResult).filter_by(user_id=user_id).first()
+
+
+def get_go_to_market_json(db: Session, user_id: str) -> Optional[dict]:
+    row = get_go_to_market(db, user_id)
     return row.data if row else None

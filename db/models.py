@@ -164,6 +164,46 @@ class IdeaStrategyResult(Base):
     created_at   = Column(DateTime, default=datetime.utcnow)
     updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+class BusinessModelResult(Base):
+    __tablename__ = "business_model_results"
+    user_id      = Column(String, primary_key=True)
+    data         = Column(JSON, nullable=False)
+    chat_history = Column(JSON, default=lambda: [])
+    created_at   = Column(DateTime, default=datetime.utcnow)
+    updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class FunctionsListResult(Base):
+    __tablename__ = "functions_list_results"
+    user_id      = Column(String, primary_key=True)
+    data         = Column(JSON, nullable=False)
+    chat_history = Column(JSON, default=lambda: [])
+    created_at   = Column(DateTime, default=datetime.utcnow)
+    updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class MVPPlanningResult(Base):
+    __tablename__ = "mvp_planning_results"
+    user_id      = Column(String, primary_key=True)
+    data         = Column(JSON, nullable=False)
+    chat_history = Column(JSON, default=lambda: [])
+    created_at   = Column(DateTime, default=datetime.utcnow)
+    updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class UnitEconomicsResult(Base):
+    __tablename__ = "unit_economics_results"
+    user_id      = Column(String, primary_key=True)
+    data         = Column(JSON, nullable=False)
+    chat_history = Column(JSON, default=lambda: [])
+    created_at   = Column(DateTime, default=datetime.utcnow)
+    updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class GoToMarketResult(Base):
+    __tablename__ = "go_to_market_results"
+    user_id      = Column(String, primary_key=True)
+    data         = Column(JSON, nullable=False)
+    chat_history = Column(JSON, default=lambda: [])
+    created_at   = Column(DateTime, default=datetime.utcnow)
+    updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 class Agent(Base):
     __tablename__ = "agents"
     id    = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))

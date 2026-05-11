@@ -1,0 +1,126 @@
+{
+  "business_model_type": "B2C Marketplace",
+  "business_model_canvas": {
+    "customer_segments": [
+      "Art students aged 18-28 in MENA universities",
+      "Adult hobbyist painters aged 25-45 in Egypt, KSA, UAE"
+    ],
+    "value_propositions": [
+      "Curated, verified-quality art supplies delivered locally within MENA",
+      "Arabic-first UX with local payment methods (Fawry, Mada, KNET)",
+      "Creator community layer — follow artists, share work, get peer critiques"
+    ],
+    "channels": [
+      "Instagram organic content + paid ads",
+      "University art department partnerships",
+      "WhatsApp Business for order confirmation and support",
+      "Platform website (Sharetribe) for marketplace transactions"
+    ],
+    "customer_relationships": [
+      "Self-service marketplace with curated seller discovery",
+      "WhatsApp group communities per art medium (watercolour, oil, etc.)",
+      "Monthly email digest of new arrivals and featured artists"
+    ],
+    "revenue_streams": [
+      {
+        "id": "R1",
+        "name": "Transaction commission",
+        "type": "commission",
+        "description": "12% commission on every seller transaction",
+        "pricing": "12% of GMV",
+        "estimated_monthly_at_scale": "$4,800 at $40K GMV/month"
+      },
+      {
+        "id": "R2",
+        "name": "Featured listing fee",
+        "type": "one_time_fee",
+        "description": "Sellers pay to appear first in search results for 7 days",
+        "pricing": "$15 per 7-day featured slot",
+        "estimated_monthly_at_scale": "$900 from 60 featured listings/month"
+      },
+      {
+        "id": "R3",
+        "name": "Premium seller subscription",
+        "type": "subscription",
+        "description": "Verified seller badge + analytics dashboard + priority support",
+        "pricing": "$29/month per seller",
+        "estimated_monthly_at_scale": "$1,450 from 50 premium sellers"
+      }
+    ],
+    "key_resources": [
+      "Sharetribe marketplace platform (no-code)",
+      "Verified seller network (20+ local suppliers)",
+      "Brand reputation and community trust",
+      "Instagram content library and audience"
+    ],
+    "key_activities": [
+      "Seller onboarding and quality verification",
+      "Content creation (product showcases, tutorials, community posts)",
+      "Customer support via WhatsApp",
+      "Community management and creator engagement"
+    ],
+    "key_partnerships": [
+      "Local art supply importers and manufacturers",
+      "University art departments (referral partners)",
+      "Fawry / Mada / KNET payment gateways",
+      "Local delivery and logistics providers"
+    ],
+    "cost_structure": {
+      "fixed_costs": [
+        {"item": "Sharetribe subscription", "monthly_usd": 79},
+        {"item": "Domain and hosting", "monthly_usd": 15},
+        {"item": "WhatsApp Business API", "monthly_usd": 20},
+        {"item": "Email tool (Mailchimp)", "monthly_usd": 13}
+      ],
+      "variable_costs": [
+        {"item": "Instagram paid ads", "monthly_usd": 200, "note": "scales with revenue"},
+        {"item": "Payment gateway fees (avg 2.5%)", "monthly_usd": "2.5% of GMV"},
+        {"item": "Founder time (opportunity cost)", "monthly_usd": 0, "note": "bootstrapped phase"}
+      ],
+      "total_fixed_monthly_usd": 127
+    }
+  },
+  "pricing_strategy": {
+    "approach": "Value-based with competitive anchoring",
+    "rationale": "Price the commission slightly below Etsy (6.5%) but above free classifieds — positioned as 'premium curation with fair take rate'",
+    "price_points": {
+      "commission_rate": "12%",
+      "featured_listing": "$15 / 7 days",
+      "premium_seller": "$29 / month"
+    },
+    "discounting_policy": "No blanket discounts — offer 1-month free premium to first 10 sellers to drive early supply",
+    "price_sensitivity_note": "Student buyers are price-sensitive on products; sellers are price-sensitive on fees. Keep commission transparent and justify it with visibility and verified badge."
+  },
+  "key_metrics": [
+    "GMV (Gross Merchandise Value) — primary health indicator",
+    "Take rate (actual revenue / GMV) — measures monetisation efficiency",
+    "Monthly Active Sellers — supply side health",
+    "Monthly Active Buyers — demand side health",
+    "Repeat purchase rate (30-day) — measures community stickiness",
+    "CAC (Customer Acquisition Cost) — via Instagram spend / new buyers",
+    "Seller churn rate — measures supply satisfaction"
+  ],
+  "business_model_risks": [
+    {
+      "risk": "Low take-rate tolerance — sellers may resist 12% and list elsewhere",
+      "severity": "high",
+      "mitigation": "Start at 8%, increase to 12% only after proving marketplace value (traffic, verified badge, analytics)"
+    },
+    {
+      "risk": "Chicken-and-egg problem — buyers leave if supply is thin, sellers leave if buyers are few",
+      "severity": "high",
+      "mitigation": "Launch supply-first: onboard 10 sellers before opening to buyers. Guarantee minimum visibility."
+    },
+    {
+      "risk": "Payment gateway fees erode margin in low-AOV transactions",
+      "severity": "medium",
+      "mitigation": "Set a $15 minimum order value. Offer cash-on-delivery as fallback."
+    }
+  ],
+  "founder_fit_assessment": {
+    "can_execute": true,
+    "reasoning": "Marketplace model requires no software building — Sharetribe handles transactions. Founder's strengths in operations, community, and co-founder split cover all key activities.",
+    "biggest_execution_risk": "Seller onboarding quality control — requires discipline and time in months 1-3"
+  },
+  "summary": "A commission-based B2C marketplace is the right model for this stage — low upfront cost, scales with GMV, and doesn't require inventory. The 12% take rate is competitive and justified by curation value. The biggest model risk is the chicken-and-egg problem, which is mitigated by supply-first launch and guaranteed early seller visibility. Total fixed costs are under $130/month, making break-even achievable at modest GMV."
+}
