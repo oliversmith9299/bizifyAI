@@ -78,7 +78,7 @@ def ensure_ai_tables():
     Platform tables (businesses, ideas, roadmap_stages, chat_sessions, etc.)
     are managed by the backend migrations — never touch them here.
     """
-    from sqlalchemy import inspect
+    from sqlalchemy import inspect, text
     from db.connection import Base
 
     inspector   = inspect(engine)
@@ -91,6 +91,28 @@ def ensure_ai_tables():
             table.tometadata(ai_metadata)
 
     ai_metadata.create_all(bind=engine)
+
+    # Add sources_list column to existing tables that don't have it yet
+    _tables_needing_sources_list = [
+        "problems_results",
+        "customers_results",
+        "competition_results",
+        "market_potential_results",
+        "idea_strategy_results",
+        "business_model_results",
+        "functions_list_results",
+        "mvp_planning_results",
+        "unit_economics_results",
+        "go_to_market_results",
+    ]
+    with engine.connect() as conn:
+        for tbl in _tables_needing_sources_list:
+            if tbl not in existing:
+                continue
+            cols = {c["name"] for c in inspector.get_columns(tbl)}
+            if "sources_list" not in cols:
+                conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN sources_list JSON"))
+        conn.commit()
 
 
 @app.get("/")

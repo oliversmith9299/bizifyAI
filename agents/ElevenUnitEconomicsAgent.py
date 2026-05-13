@@ -284,6 +284,7 @@ def run_unit_economics(
     result = parse_llm_json(raw)
     result["source_mode"]  = source_mode
     result["sources_used"] = len(sources)
+    result["sources_list"] = [{"url": s["url"], "title": s.get("title", s["url"])} for s in sources]
 
     # ── 4. Persist ───────────────────────────────────────────────────────────
     db = SessionLocal()

@@ -162,6 +162,7 @@ class ProblemsResult(Base):
     customer_segments = Column(JSON, nullable=True)   # []
     personas          = Column(JSON, nullable=True)   # []
     summary_insight   = Column(Text, nullable=True)
+    sources_list      = Column(JSON, nullable=True)   # [{url, title}]
     created_at        = Column(DateTime, default=datetime.utcnow)
 
     @property
@@ -242,6 +243,7 @@ class CustomersResult(Base):
     summary              = Column(Text,    nullable=True)
     source_mode          = Column(String,  nullable=True)
     sources_used         = Column(Integer, nullable=True)
+    sources_list         = Column(JSON,    nullable=True)     # [{url, title}]
     chat_history         = Column(JSON,    default=lambda: [])
     created_at           = Column(DateTime, default=datetime.utcnow)
     updated_at           = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -258,6 +260,7 @@ class CustomersResult(Base):
             "summary":              self.summary              or "",
             "source_mode":          self.source_mode          or "",
             "sources_used":         self.sources_used         or 0,
+            "sources_list":         self.sources_list         or [],
         }
 
 
@@ -278,6 +281,7 @@ class CompetitionResult(Base):
     summary                      = Column(Text,    nullable=True)
     source_mode                  = Column(String,  nullable=True)
     sources_used                 = Column(Integer, nullable=True)
+    sources_list                 = Column(JSON,    nullable=True)     # [{url, title}]
     chat_history                 = Column(JSON,    default=lambda: [])
     created_at                   = Column(DateTime, default=datetime.utcnow)
     updated_at                   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -295,6 +299,7 @@ class CompetitionResult(Base):
             "summary":                       self.summary                       or "",
             "source_mode":                   self.source_mode                   or "",
             "sources_used":                  self.sources_used                  or 0,
+            "sources_list":                  self.sources_list                  or [],
         }
 
 
@@ -320,6 +325,7 @@ class MarketPotentialResult(Base):
     target_region             = Column(String,  nullable=True)
     source_mode               = Column(String,  nullable=True)
     sources_used              = Column(Integer, nullable=True)
+    sources_list              = Column(JSON,    nullable=True)     # [{url, title}]
     chat_history              = Column(JSON,    default=lambda: [])
     created_at                = Column(DateTime, default=datetime.utcnow)
     updated_at                = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -342,6 +348,7 @@ class MarketPotentialResult(Base):
             "target_region":              self.target_region              or "",
             "source_mode":                self.source_mode                or "",
             "sources_used":               self.sources_used               or 0,
+            "sources_list":               self.sources_list               or [],
         }
 
 
@@ -364,6 +371,7 @@ class IdeaStrategyResult(Base):
     summary                 = Column(Text,    nullable=True)
     source_mode             = Column(String,  nullable=True)
     sources_used            = Column(Integer, nullable=True)
+    sources_list            = Column(JSON,    nullable=True)     # [{url, title}]
     chat_history            = Column(JSON,    default=lambda: [])
     created_at              = Column(DateTime, default=datetime.utcnow)
     updated_at              = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -383,6 +391,7 @@ class IdeaStrategyResult(Base):
             "summary":                  self.summary                  or "",
             "source_mode":              self.source_mode              or "",
             "sources_used":             self.sources_used             or 0,
+            "sources_list":             self.sources_list             or [],
         }
 
 
@@ -403,6 +412,7 @@ class BusinessModelResult(Base):
     summary                = Column(Text,    nullable=True)
     source_mode            = Column(String,  nullable=True)
     sources_used           = Column(Integer, nullable=True)
+    sources_list           = Column(JSON,    nullable=True)     # [{url, title}]
     chat_history           = Column(JSON,    default=lambda: [])
     created_at             = Column(DateTime, default=datetime.utcnow)
     updated_at             = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -420,6 +430,7 @@ class BusinessModelResult(Base):
             "summary":                self.summary                or "",
             "source_mode":            self.source_mode            or "",
             "sources_used":           self.sources_used           or 0,
+            "sources_list":           self.sources_list           or [],
         }
 
 
@@ -441,6 +452,7 @@ class FunctionsListResult(Base):
     summary                      = Column(Text,    nullable=True)
     source_mode                  = Column(String,  nullable=True)
     sources_used                 = Column(Integer, nullable=True)
+    sources_list                 = Column(JSON,    nullable=True)     # [{url, title}]
     chat_history                 = Column(JSON,    default=lambda: [])
     created_at                   = Column(DateTime, default=datetime.utcnow)
     updated_at                   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -459,6 +471,7 @@ class FunctionsListResult(Base):
             "summary":                        self.summary                        or "",
             "source_mode":                    self.source_mode                    or "",
             "sources_used":                   self.sources_used                   or 0,
+            "sources_list":                   self.sources_list                   or [],
         }
 
 
@@ -482,6 +495,7 @@ class MVPPlanningResult(Base):
     summary               = Column(Text,    nullable=True)
     source_mode           = Column(String,  nullable=True)
     sources_used          = Column(Integer, nullable=True)
+    sources_list          = Column(JSON,    nullable=True)     # [{url, title}]
     chat_history          = Column(JSON,    default=lambda: [])
     created_at            = Column(DateTime, default=datetime.utcnow)
     updated_at            = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -502,6 +516,7 @@ class MVPPlanningResult(Base):
             "summary":                self.summary                or "",
             "source_mode":            self.source_mode            or "",
             "sources_used":           self.sources_used           or 0,
+            "sources_list":           self.sources_list           or [],
         }
 
 
@@ -528,6 +543,7 @@ class UnitEconomicsResult(Base):
     summary               = Column(Text,    nullable=True)
     source_mode           = Column(String,  nullable=True)
     sources_used          = Column(Integer, nullable=True)
+    sources_list          = Column(JSON,    nullable=True)     # [{url, title}]
     chat_history          = Column(JSON,    default=lambda: [])
     created_at            = Column(DateTime, default=datetime.utcnow)
     updated_at            = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -551,6 +567,7 @@ class UnitEconomicsResult(Base):
             "summary":               self.summary               or "",
             "source_mode":           self.source_mode           or "",
             "sources_used":          self.sources_used          or 0,
+            "sources_list":          self.sources_list          or [],
         }
 
 
@@ -574,6 +591,7 @@ class GoToMarketResult(Base):
     summary                   = Column(Text,    nullable=True)
     source_mode               = Column(String,  nullable=True)
     sources_used              = Column(Integer, nullable=True)
+    sources_list              = Column(JSON,    nullable=True)     # [{url, title}]
     chat_history              = Column(JSON,    default=lambda: [])
     created_at                = Column(DateTime, default=datetime.utcnow)
     updated_at                = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -594,4 +612,5 @@ class GoToMarketResult(Base):
             "summary":                  self.summary                  or "",
             "source_mode":              self.source_mode              or "",
             "sources_used":             self.sources_used             or 0,
+            "sources_list":             self.sources_list             or [],
         }
