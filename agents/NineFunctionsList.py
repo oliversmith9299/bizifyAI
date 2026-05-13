@@ -236,8 +236,6 @@ def run_functions_list(
     business_model : dict — EightBusinessModel output (optional)
     custom_prompt  : str  — extra instruction for regenerate-custom
     """
-    start = time.time()
-
     # Infer region
     region = "Global"
     if market_potential:
@@ -293,29 +291,9 @@ def run_functions_list(
     result["sources_used"] = len(sources)
 
     # ── 4. Persist ───────────────────────────────────────────────────────────
-    elapsed_ms = int((time.time() - start) * 1000)
-
     db = SessionLocal()
     try:
         crud.save_functions_list(db, user_id, result)
-        crud.save_agent_run(
-            db,
-            user_id=user_id,
-            agent_name="NineFunctionsList",
-            input_data={
-                "idea_snippet":    idea[:300],
-                "region":          region,
-                "has_customers":   customers is not None,
-                "has_competition": competition is not None,
-                "has_strategy":    strategy is not None,
-                "has_biz_model":   business_model is not None,
-                "source_mode":     source_mode,
-                "sources_used":    len(sources),
-            },
-            output_data=result,
-            status="done",
-            execution_time_ms=elapsed_ms,
-        )
     finally:
         db.close()
 

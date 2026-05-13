@@ -253,8 +253,6 @@ def run_mvp_planning(
     functions_list   : dict — NineFunctionsList output (optional)
     custom_prompt    : str  — extra instruction for regenerate-custom
     """
-    start = time.time()
-
     region = "Global"
     if market_potential:
         region = market_potential.get("target_region", region)
@@ -311,28 +309,9 @@ def run_mvp_planning(
     result["sources_used"] = len(sources)
 
     # ── 4. Persist ───────────────────────────────────────────────────────────
-    elapsed_ms = int((time.time() - start) * 1000)
-
     db = SessionLocal()
     try:
         crud.save_mvp_planning(db, user_id, result)
-        crud.save_agent_run(
-            db,
-            user_id=user_id,
-            agent_name="TenMVPPlanning",
-            input_data={
-                "idea_snippet":    idea[:300],
-                "region":          region,
-                "has_strategy":    strategy is not None,
-                "has_biz_model":   business_model is not None,
-                "has_functions":   functions_list is not None,
-                "source_mode":     source_mode,
-                "sources_used":    len(sources),
-            },
-            output_data=result,
-            status="done",
-            execution_time_ms=elapsed_ms,
-        )
     finally:
         db.close()
 

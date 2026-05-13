@@ -25,7 +25,6 @@ DB flow:
 import json
 import logging
 import os
-import time
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -192,7 +191,7 @@ def run_competition_analysis(
     customers     : dict — output of FourCustomersAgent (optional but recommended)
     custom_prompt : str  — extra instruction for regenerate-custom
     """
-    start = time.time()
+
 
     region = ""
     if customers:
@@ -243,26 +242,9 @@ def run_competition_analysis(
     result["sources_used"] = len(sources)
 
     # ── 4. Persist ───────────────────────────────────────────────────────────
-    elapsed_ms = int((time.time() - start) * 1000)
-
     db = SessionLocal()
     try:
         crud.save_competition(db, user_id, result)
-        crud.save_agent_run(
-            db,
-            user_id=user_id,
-            agent_name="FiveCompetitionAgent",
-            input_data={
-                "idea_snippet":  idea[:300],
-                "problem_count": len(problems.get("problems", [])),
-                "has_customers": customers is not None,
-                "source_mode":   source_mode,
-                "sources_used":  len(sources),
-            },
-            output_data=result,
-            status="done",
-            execution_time_ms=elapsed_ms,
-        )
     finally:
         db.close()
 

@@ -16,8 +16,7 @@ class BaseAgent(ABC):
 
     Attributes
     ----------
-    name  : Registry name — must match the key in AGENT_DEFINITIONS in crud.py
-            (e.g. "OneProfileAnalysis", "TwoProblemDiscovery")
+    name  : Agent identifier (e.g. "OneProfileAnalysis", "TwoProblemDiscovery")
     phase : Pipeline phase label (discovery / ideation / planning / strategy /
             business / product / finance / launch)
     """
