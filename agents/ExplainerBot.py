@@ -26,28 +26,14 @@ no intent classification. Just load the data, answer the question, stay in scope
 
 import json
 import logging
-import os
 from typing import Optional
-
-from dotenv import load_dotenv
-from openai import OpenAI
 
 from db.connection import SessionLocal
 from db import crud
+from agents.config import client, GROQ_MODEL
 from System_Messages.explainer_bot_prompt import EXPLAINER_BOT_SYSTEM_PROMPT
 
-load_dotenv()
-
 log = logging.getLogger(__name__)
-
-GROQ_API_KEY  = os.getenv("GROQ_API_KEY")
-GROQ_API_BASE = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
-GROQ_MODEL    = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-
-if not GROQ_API_KEY:
-    raise RuntimeError("GROQ_API_KEY is not set.")
-
-client = OpenAI(api_key=GROQ_API_KEY, base_url=GROQ_API_BASE)
 
 _EXPLAINABLE_SECTIONS: dict[str, tuple[str, str]] = {
     "profile":          ("get_profile",          "Founder Profile"),

@@ -25,13 +25,49 @@ CONTENT_CHARS_PER_SOURCE = 800
 # ─────────────────────────────────────────────────────────────────────────────
 
 def parse_llm_json(raw: str) -> dict:
-    """Strip markdown code fences and parse JSON from an LLM response."""
+    """
+    Parse JSON from an LLM response, tolerating common output issues:
+    - empty or None response
+    - markdown code fences (```json ... ``` or ``` ... ```)
+    - JSON embedded in surrounding prose
+    Logs the raw response on failure so the caller has context.
+    """
+    if not raw or not raw.strip():
+        log.error("[parse_llm_json] LLM returned an empty response")
+        raise ValueError("LLM returned an empty response — cannot parse JSON")
+
     cleaned = raw.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.split("```")[1].strip()
-        if cleaned.lower().startswith("json"):
-            cleaned = cleaned[4:].strip()
-    return json.loads(cleaned)
+
+    # ── strip code fences ────────────────────────────────────────────────────
+    if "```" in cleaned:
+        # grab everything between the first ``` and the last ```
+        inner = cleaned.split("```")
+        # parts: ["before", "json\n{...}", "after"] → take index 1
+        if len(inner) >= 2:
+            cleaned = inner[1].strip()
+            if cleaned.lower().startswith("json"):
+                cleaned = cleaned[len("json"):].strip()
+
+    # ── first attempt: cleaned text ──────────────────────────────────────────
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+
+    # ── second attempt: find first { ... } or [ ... ] block in raw output ───
+    for start_char, end_char in [('{', '}'), ('[', ']')]:
+        start = raw.find(start_char)
+        end   = raw.rfind(end_char)
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(raw[start:end + 1])
+            except json.JSONDecodeError:
+                pass
+
+    log.error("[parse_llm_json] Could not parse JSON. Raw LLM output:\n%s", raw)
+    raise ValueError(
+        f"LLM response is not valid JSON. First 300 chars: {raw[:300]!r}"
+    )
 
 
 def truncate_sources(sources: list, max_chars: int = 80_000) -> list:

@@ -23,30 +23,14 @@ DB flow:
 
 import json
 import logging
-import os
-import time
-
-from dotenv import load_dotenv
-from openai import OpenAI
 
 from agents.utils import gather_sources, parse_llm_json, truncate_sources
+from agents.config import client, GROQ_MODEL, SERPER_API_KEY
 from db.connection import SessionLocal
 from db import crud
 from System_Messages.customers_prompt import CUSTOMERS_ANALYSIS_PROMPT, CUSTOMERS_CHAT_PROMPT
 
 log = logging.getLogger(__name__)
-
-load_dotenv()
-
-GROQ_API_KEY  = os.getenv("GROQ_API_KEY")
-GROQ_API_BASE = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
-GROQ_MODEL    = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-SERPER_API_KEY = os.getenv("SERPER_API_KEY")
-
-if not GROQ_API_KEY:
-    raise RuntimeError("GROQ_API_KEY is not set.")
-
-client = OpenAI(api_key=GROQ_API_KEY, base_url=GROQ_API_BASE)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

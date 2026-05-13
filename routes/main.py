@@ -1,5 +1,4 @@
 import json
-import os
 import time
 from collections.abc import Generator
 from typing import Any, Callable, Dict, List, Optional
@@ -14,7 +13,7 @@ from db import crud
 
 router = APIRouter(prefix="/pipeline", tags=["AI Pipeline"])
 
-API_SECRET_KEY = os.getenv("API_SECRET_KEY", "dev-key")
+from agents.config import API_SECRET_KEY
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 # SECURITY CONTRACT (read before adding any route):

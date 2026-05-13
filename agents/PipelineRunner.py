@@ -15,23 +15,11 @@ Agent implementation library — individual AI functions used by the orchestrato
 
 import json
 import logging
-import os
-
-from dotenv import load_dotenv
-from openai import OpenAI
 
 from agents.utils import fetch_reddit, fetch_web, parse_llm_json, search_serper
-
-load_dotenv()
+from agents.config import client as groq_client, GROQ_MODEL, SERPER_API_KEY
 
 log = logging.getLogger("pipeline_runner")
-
-GROQ_API_KEY   = os.getenv("GROQ_API_KEY")
-GROQ_API_BASE  = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
-GROQ_MODEL     = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-SERPER_API_KEY = os.getenv("SERPER_API_KEY")
-
-groq_client = OpenAI(api_key=GROQ_API_KEY, base_url=GROQ_API_BASE)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
