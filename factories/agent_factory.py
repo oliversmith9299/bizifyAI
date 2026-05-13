@@ -4,7 +4,7 @@ factories/agent_factory.py
 Returns the callable run-function for a given agent name.
 The orchestrator uses this instead of hard-coding imports.
 
-All agent names match the keys in crud.AGENT_DEFINITIONS.
+Agent names correspond to their dedicated result tables in the database.
 """
 
 from typing import Callable

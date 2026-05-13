@@ -4,7 +4,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from db.connection import engine
 from db import crud
 from db.models import (
-    # AI-private tables — safe to auto-create
     PipelineRun,
     ProfileResult,
     QuestionnaireOutput,
@@ -15,11 +14,11 @@ from db.models import (
     CompetitionResult,
     MarketPotentialResult,
     IdeaStrategyResult,
-    # Shared platform tables — already managed by the backend migrations
-    # Agent and AgentRun are in the DB schema PDF (Section 4) — backend owns them
-    # We only auto-create them here if they don't already exist (safe: create_all is idempotent)
-    Agent,
-    AgentRun,
+    BusinessModelResult,
+    FunctionsListResult,
+    MVPPlanningResult,
+    UnitEconomicsResult,
+    GoToMarketResult,
 )
 from sqlalchemy import MetaData, Table
 from routes import router as pipeline_router
@@ -93,14 +92,6 @@ def ensure_ai_tables():
             table.tometadata(ai_metadata)
 
     ai_metadata.create_all(bind=engine)
-
-    # Seed agent registry rows
-    from db.connection import SessionLocal
-    session = SessionLocal()
-    try:
-        crud.seed_agents(session)
-    finally:
-        session.close()
 
 
 @app.get("/")

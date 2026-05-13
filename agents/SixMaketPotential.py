@@ -213,7 +213,6 @@ def run_market_potential(
     competition   : dict — output of FiveCompetitionAgent (optional)
     custom_prompt : str  — extra instruction for regenerate-custom
     """
-    start = time.time()
 
     # Extract region from customers or problems
     region = "Global"
@@ -269,27 +268,9 @@ def run_market_potential(
     result["target_region"] = result.get("target_region") or region
 
     # ── 4. Persist ───────────────────────────────────────────────────────────
-    elapsed_ms = int((time.time() - start) * 1000)
-
     db = SessionLocal()
     try:
         crud.save_market_potential(db, user_id, result)
-        crud.save_agent_run(
-            db,
-            user_id=user_id,
-            agent_name="SixMaketPotential",
-            input_data={
-                "idea_snippet":    idea[:300],
-                "region":          region,
-                "has_customers":   customers is not None,
-                "has_competition": competition is not None,
-                "source_mode":     source_mode,
-                "sources_used":    len(sources),
-            },
-            output_data=result,
-            status="done",
-            execution_time_ms=elapsed_ms,
-        )
     finally:
         db.close()
 
