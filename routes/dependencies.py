@@ -38,10 +38,7 @@ def verify_api_key(x_api_key: str = Header(...)) -> None:
 # ── Request models ────────────────────────────────────────────────────────────
 
 class QuestionnaireInput(BaseModel):
-    user_id:        str
-    user_profile:   Dict[str, Any]
-    career_profile: Dict[str, Any]
-    skills:         List[str] = []
+    user_id: str
 
 
 class ChatInput(BaseModel):
@@ -134,11 +131,3 @@ def sse_chat_stream(
     )
 
 
-# ── Questionnaire payload builder ─────────────────────────────────────────────
-
-def build_questionnaire_payload(data: QuestionnaireInput) -> Dict[str, Any]:
-    return {
-        "user_profile":  data.user_profile,
-        "career_profile": data.career_profile,
-        "skills":         data.skills,
-    }

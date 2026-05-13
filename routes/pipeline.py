@@ -10,7 +10,6 @@ from routes.dependencies import (
     sse_chat_stream,
     QuestionnaireInput,
     ChatInput,
-    build_questionnaire_payload,
 )
 
 router = APIRouter()
@@ -22,12 +21,21 @@ async def run_pipeline(
     background_tasks: BackgroundTasks,
     db=Depends(get_db),
 ):
-    questionnaire = build_questionnaire_payload(data)
+    questionnaire = crud.get_questionnaire_from_profile(db, data.user_id)
+    if not questionnaire:
+        raise HTTPException(
+            status_code=425,
+            detail="user_profiles row not found or questionnaire_json is empty. "
+                   "Complete the onboarding questionnaire first.",
+        )
+
+    skills = crud.get_skills_from_profile(db, data.user_id)
+
     crud.save_questionnaire_output(db, data.user_id, questionnaire)
     crud.upsert_pipeline_status(db, data.user_id, "pending")
 
     from orchestrator.orchestrator import run_new_user_pipeline
-    background_tasks.add_task(run_new_user_pipeline, data.user_id, questionnaire, data.skills)
+    background_tasks.add_task(run_new_user_pipeline, data.user_id, questionnaire, skills)
 
     return JSONResponse(status_code=202, content={
         "user_id":   data.user_id,

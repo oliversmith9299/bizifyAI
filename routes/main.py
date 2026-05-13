@@ -35,9 +35,6 @@ def verify_api_key(x_api_key: str = Header(...)):
 # ── Request Models ────────────────────────────────────────────────────────────
 class QuestionnaireInput(BaseModel):
     user_id: str
-    user_profile: Dict[str, Any]
-    career_profile: Dict[str, Any]
-    skills: List[str] = []
 
 class ChatInput(BaseModel):
     user_id: str
@@ -138,13 +135,6 @@ def _sse_chat_stream(
         },
     )
 
-def build_questionnaire_payload(data: QuestionnaireInput) -> Dict[str, Any]:
-    return {
-        "user_profile": data.user_profile,
-        "career_profile": data.career_profile,
-        "skills": data.skills  # FIX: Skills are now preserved
-    }
-
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/health")
@@ -159,19 +149,21 @@ async def run_pipeline(
     background_tasks: BackgroundTasks,
     db=Depends(get_db)
 ):
-    """
-    START the pipeline for a user.
-    Backend sends all questionnaire data -> we save it -> run pipeline in background.
-    """
-    questionnaire = build_questionnaire_payload(data)
+    questionnaire = crud.get_questionnaire_from_profile(db, data.user_id)
+    if not questionnaire:
+        raise HTTPException(
+            status_code=425,
+            detail="user_profiles row not found or questionnaire_json is empty. "
+                   "Complete the onboarding questionnaire first.",
+        )
+
+    skills = crud.get_skills_from_profile(db, data.user_id)
 
     crud.save_questionnaire_output(db, data.user_id, questionnaire)
-
-    # Mark as pending in DB
     crud.upsert_pipeline_status(db, data.user_id, "pending")
 
     from orchestrator.orchestrator import run_new_user_pipeline
-    background_tasks.add_task(run_new_user_pipeline, data.user_id, questionnaire, data.skills)
+    background_tasks.add_task(run_new_user_pipeline, data.user_id, questionnaire, skills)
 
     return JSONResponse(status_code=202, content={
         "user_id": data.user_id,
