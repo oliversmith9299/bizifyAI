@@ -13,6 +13,7 @@ from typing import Any, Optional
 from sqlalchemy.orm import Session
 
 from db.models import (
+    UserProfile,
     BusinessModelResult,
     CompetitionResult,
     CustomersResult,
@@ -79,6 +80,40 @@ def upsert_pipeline_status(
 
 def get_pipeline_status(db: Session, user_id: str) -> Optional[PipelineRun]:
     return db.query(PipelineRun).filter_by(user_id=user_id).first()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# user_profiles  (backend-owned — AI reads only; never writes)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_user_profile(db: Session, user_id: str) -> Optional[UserProfile]:
+    """Return the user_profiles row for this user, or None."""
+    return db.query(UserProfile).filter_by(user_id=user_id).first()
+
+
+def get_questionnaire_from_profile(db: Session, user_id: str) -> Optional[dict]:
+    """
+    Extract the questionnaire payload stored in user_profiles.questionnaire_json.
+    Returns None if the row does not exist or the column is empty.
+    """
+    row = get_user_profile(db, user_id)
+    return row.questionnaire_json if row else None
+
+
+def get_skills_from_profile(db: Session, user_id: str) -> list:
+    """
+    Extract the skills list stored in user_profiles.skills_json.
+    Returns [] if not found.
+    """
+    row = get_user_profile(db, user_id)
+    if not row:
+        return []
+    skills = row.skills_json
+    if isinstance(skills, list):
+        return skills
+    if isinstance(skills, dict):
+        return skills.get("skills", [])
+    return []
 
 
 # ─────────────────────────────────────────────────────────────────────────────

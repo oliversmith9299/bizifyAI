@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from db.connection import engine
 from db import crud
 from db.models import (
+    UserProfile,          # backend-owned — imported so the ORM mapper registers it
     PipelineRun,
     ProfileResult,
     QuestionnaireOutput,
@@ -66,9 +67,7 @@ _AI_OWNED_TABLES = {
     "mvp_planning_results",
     "unit_economics_results",
     "go_to_market_results",
-    # Shared platform tables the AI writes to (schema PDF section 4)
-    "agents",
-    "agent_runs",
+    # user_profiles is backend-owned — NOT listed here so create_all never touches it
 }
 
 

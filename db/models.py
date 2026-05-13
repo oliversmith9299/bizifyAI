@@ -82,6 +82,23 @@ class ChatMessage(Base):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# user_profiles  (backend-owned — AI service reads only)
+# Matches the actual DB schema: questionnaire_json + skills_json live here.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+    id                      = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id                 = Column(String, nullable=False)   # FK → users.id
+    bio                     = Column(Text,    nullable=True)
+    skills_json             = Column(JSON,    nullable=True)   # [] of skill strings
+    questionnaire_json      = Column(JSON,    nullable=True)   # {user_profile, career_profile, skills}
+    onboarding_completed    = Column(Boolean, nullable=True)
+    updated_at              = Column(DateTime, nullable=True)
+    guide_status            = Column(String,  nullable=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Pipeline status
 # ─────────────────────────────────────────────────────────────────────────────
 
