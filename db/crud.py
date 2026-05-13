@@ -165,6 +165,7 @@ def save_problems(db: Session, user_id: str, data: dict) -> ProblemsResult:
     row.customer_segments = data.get("customer_segments")
     row.personas          = data.get("personas")
     row.summary_insight   = data.get("summary_insight")
+    row.sources_list      = data.get("sources_list")
     return _safe_commit(db, row)
 
 
@@ -235,13 +236,14 @@ def save_customers(
     row = _upsert(db, CustomersResult, user_id)
     row.customer_segments     = data.get("customer_segments")
     row.primary_segment       = data.get("primary_segment")
-    row.catwoe                = data.get("catwoe")
+    row.catwoe                = data.get("catwoe") or data.get("catwoe_analysis")
     row.personas              = data.get("personas")
     row.acquisition_channels  = data.get("acquisition_channels")
     row.early_adopter_profile = data.get("early_adopter_profile")
     row.summary               = data.get("summary")
     row.source_mode           = data.get("source_mode")
     row.sources_used          = data.get("sources_used")
+    row.sources_list          = data.get("sources_list")
     if chat_history is not None:
         row.chat_history = chat_history
     row.updated_at = datetime.utcnow()
@@ -275,6 +277,7 @@ def save_competition(
     row.summary                       = data.get("summary")
     row.source_mode                   = data.get("source_mode")
     row.sources_used                  = data.get("sources_used")
+    row.sources_list                  = data.get("sources_list")
     if chat_history is not None:
         row.chat_history = chat_history
     row.updated_at = datetime.utcnow()
@@ -313,6 +316,7 @@ def save_market_potential(
     row.target_region              = data.get("target_region")
     row.source_mode                = data.get("source_mode")
     row.sources_used               = data.get("sources_used")
+    row.sources_list               = data.get("sources_list")
     if chat_history is not None:
         row.chat_history = chat_history
     row.updated_at = datetime.utcnow()
@@ -348,6 +352,7 @@ def save_idea_strategy(
     row.summary                  = data.get("summary")
     row.source_mode              = data.get("source_mode")
     row.sources_used             = data.get("sources_used")
+    row.sources_list             = data.get("sources_list")
     if chat_history is not None:
         row.chat_history = chat_history
     row.updated_at = datetime.utcnow()
@@ -381,6 +386,7 @@ def save_business_model(
     row.summary                = data.get("summary")
     row.source_mode            = data.get("source_mode")
     row.sources_used           = data.get("sources_used")
+    row.sources_list           = data.get("sources_list")
     if chat_history is not None:
         row.chat_history = chat_history
     row.updated_at = datetime.utcnow()
@@ -415,6 +421,7 @@ def save_functions_list(
     row.summary                        = data.get("summary")
     row.source_mode                    = data.get("source_mode")
     row.sources_used                   = data.get("sources_used")
+    row.sources_list                   = data.get("sources_list")
     if chat_history is not None:
         row.chat_history = chat_history
     row.updated_at = datetime.utcnow()
@@ -451,6 +458,7 @@ def save_mvp_planning(
     row.summary                = data.get("summary")
     row.source_mode            = data.get("source_mode")
     row.sources_used           = data.get("sources_used")
+    row.sources_list           = data.get("sources_list")
     if chat_history is not None:
         row.chat_history = chat_history
     row.updated_at = datetime.utcnow()
@@ -490,6 +498,7 @@ def save_unit_economics(
     row.summary               = data.get("summary")
     row.source_mode           = data.get("source_mode")
     row.sources_used          = data.get("sources_used")
+    row.sources_list          = data.get("sources_list")
     if chat_history is not None:
         row.chat_history = chat_history
     row.updated_at = datetime.utcnow()
@@ -526,6 +535,7 @@ def save_go_to_market(
     row.summary                  = data.get("summary")
     row.source_mode              = data.get("source_mode")
     row.sources_used             = data.get("sources_used")
+    row.sources_list             = data.get("sources_list")
     if chat_history is not None:
         row.chat_history = chat_history
     row.updated_at = datetime.utcnow()

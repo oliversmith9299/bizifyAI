@@ -260,6 +260,9 @@ Return ONLY valid JSON:
             p["validation_score"] = 35
         else:
             p["validation_score"] = min(85, len(p.get("sources", [])) * 25 + len(p.get("evidence", [])) * 15)
+    result["source_mode"]  = source_mode
+    result["sources_used"] = len(enriched)
+    result["sources_list"] = [{"url": s["url"], "title": s.get("title", s["url"])} for s in enriched]
     return result
 
 

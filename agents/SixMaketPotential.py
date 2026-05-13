@@ -248,8 +248,9 @@ def run_market_potential(
 
     raw    = response.choices[0].message.content
     result = parse_llm_json(raw)
-    result["source_mode"]  = source_mode
-    result["sources_used"] = len(sources)
+    result["source_mode"]   = source_mode
+    result["sources_used"]  = len(sources)
+    result["sources_list"]  = [{"url": s["url"], "title": s.get("title", s["url"])} for s in sources]
     result["target_region"] = result.get("target_region") or region
 
     # ── 4. Persist ───────────────────────────────────────────────────────────
