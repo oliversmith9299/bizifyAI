@@ -12,35 +12,11 @@
 # The FastAPI pipeline uses agents/PipelineRunner.run_profile_analysis instead.
 # Keep the two in sync when changing the prompt or output schema.
 
-import os
 import json
-from dotenv import load_dotenv
-from openai import OpenAI
 from db.connection import SessionLocal
 from db import crud
 from agents.utils import parse_llm_json
-
-#
-
-# -------------------------
-# Load environment
-# -------------------------
-load_dotenv()
-
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_API_BASE = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-70b-8192")
-
-if not GROQ_API_KEY:
-    raise RuntimeError("GROQ_API_KEY is not set.")
-
-# -------------------------
-# Init client
-# -------------------------
-client = OpenAI(
-    api_key=GROQ_API_KEY,
-    base_url=GROQ_API_BASE,
-)
+from agents.config import client, GROQ_MODEL
 
 # -------------------------
 def run_profile_analysis(user_id: str):

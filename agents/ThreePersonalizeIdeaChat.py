@@ -1,19 +1,8 @@
 #3
 
-import os
 from typing import Dict, List
 
-from openai import OpenAI
-
-
-# ─────────────────────────────────────────────
-# Setup
-# ─────────────────────────────────────────────
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_API_BASE = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-
-client = OpenAI(api_key=GROQ_API_KEY, base_url=GROQ_API_BASE)
+from agents.config import client, GROQ_MODEL
 
 
 # ─────────────────────────────────────────────

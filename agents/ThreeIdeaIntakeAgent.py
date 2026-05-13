@@ -7,26 +7,11 @@
 # Multi-turn: if the idea is too vague, the agent asks 2-3 short clarification
 # questions and waits for answers before producing the structured output.
 
-import os
-
-from dotenv import load_dotenv
-from openai import OpenAI
-
 from db.connection import SessionLocal
 from db import crud
 from agents.utils import parse_llm_json
+from agents.config import client, GROQ_MODEL
 from System_Messages.idea_intake_prompt import IDEA_INTAKE_PROMPT as _SYSTEM_PROMPT
-
-load_dotenv()
-
-GROQ_API_KEY  = os.getenv("GROQ_API_KEY")
-GROQ_API_BASE = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
-GROQ_MODEL    = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-
-if not GROQ_API_KEY:
-    raise RuntimeError("GROQ_API_KEY is not set.")
-
-client = OpenAI(api_key=GROQ_API_KEY, base_url=GROQ_API_BASE)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # System prompt

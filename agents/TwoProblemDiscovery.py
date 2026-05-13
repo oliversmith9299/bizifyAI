@@ -3,14 +3,11 @@
 # which has more features (B2B guard, curiosity-domain templates, region modifiers).
 # Keep the two in sync when changing the output schema.
 
-import os
 import json
 import time
 import logging
 import requests
 from typing import Dict, List
-from dotenv import load_dotenv
-from openai import OpenAI
 from bs4 import BeautifulSoup
 from agents.utils import (
     parse_llm_json,
@@ -19,6 +16,7 @@ from agents.utils import (
     fetch_reddit,
     fetch_web,
 )
+from agents.config import client, GROQ_MODEL, SERPER_API_KEY
 
 
 # ─────────────────────────────────────────────────────────
@@ -27,20 +25,8 @@ from agents.utils import (
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-load_dotenv()
-
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_API_BASE = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-SERPER_API_KEY = os.getenv("SERPER_API_KEY")
-
 MAX_PROMPT_CHARS = 80_000
 CONTENT_CHARS_PER_SOURCE = 800
-
-if not GROQ_API_KEY or not SERPER_API_KEY:
-    raise RuntimeError("Missing GROQ_API_KEY or SERPER_API_KEY")
-
-client = OpenAI(api_key=GROQ_API_KEY, base_url=GROQ_API_BASE)
 
 
 # ─────────────────────────────────────────────────────────

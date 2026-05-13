@@ -6,7 +6,6 @@ helper used by every route file. Import from here instead of duplicating.
 """
 
 import json
-import os
 from collections.abc import Generator
 from typing import Any, Callable, Dict, List, Optional
 
@@ -26,7 +25,7 @@ from pydantic import BaseModel
 # The API key proves the request came from the backend.
 # It does NOT prove user_id is valid — that is the backend's job.
 
-API_SECRET_KEY = os.getenv("API_SECRET_KEY", "dev-key")
+from agents.config import API_SECRET_KEY
 
 
 def verify_api_key(x_api_key: str = Header(...)) -> None:
