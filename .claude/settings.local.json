@@ -3,7 +3,8 @@
     "allow": [
       "Bash(Get-ChildItem -Path \"c:\\\\BIDT\\\\GP\\\\bizifyAI\" -Recurse -Filter \"*.py\")",
       "Bash(Select-Object -ExpandProperty FullName)",
-      "Bash(Sort-Object)"
+      "Bash(Sort-Object)",
+      "Bash(Get-ChildItem -Path \"c:\\\\BIDT\\\\GP\\\\bizifyAI\" -Recurse -Include \"*.py\")"
     ]
   }
 }

@@ -43,6 +43,17 @@ class ChatInput(BaseModel):
     user_id: str
     message: str
 
+class GeneralBotInput(BaseModel):
+    user_id: str
+    message: str
+    history: List[Dict[str, Any]] = []
+
+class ExplainerInput(BaseModel):
+    user_id: str
+    message: str
+    history: List[Dict[str, Any]] = []
+    section: Optional[str] = None   # e.g. "customers", "business_model"
+
 class IdeaIntakeInput(BaseModel):
     user_id: str
     message: str
@@ -179,24 +190,50 @@ def get_status(user_id: str, db=Depends(get_db)):
     if not run:
         raise HTTPException(status_code=404, detail="No pipeline found for this user_id")
 
+    # Query each section once and reuse for both individual flags and pipeline_complete
+    profile_ready         = crud.get_profile(db, user_id) is not None
+    problems_ready        = crud.get_problems(db, user_id) is not None
+    intake_ready          = crud.get_idea_intake_json(db, user_id) is not None
+    idea_ready            = crud.get_idea(db, user_id) is not None
+    customers_ready       = crud.get_customers_json(db, user_id) is not None
+    competition_ready     = crud.get_competition_json(db, user_id) is not None
+    market_potential_ready = crud.get_market_potential_json(db, user_id) is not None
+    idea_strategy_ready   = crud.get_idea_strategy_json(db, user_id) is not None
+    business_model_ready  = crud.get_business_model_json(db, user_id) is not None
+    functions_list_ready  = crud.get_functions_list_json(db, user_id) is not None
+    mvp_planning_ready    = crud.get_mvp_planning_json(db, user_id) is not None
+    unit_economics_ready  = crud.get_unit_economics_json(db, user_id) is not None
+    go_to_market_ready    = crud.get_go_to_market_json(db, user_id) is not None
+
+    # pipeline_complete = all 12 analysis sections are done (true "full plan" flag)
+    pipeline_complete = all([
+        profile_ready, problems_ready, idea_ready,
+        customers_ready, competition_ready, market_potential_ready,
+        idea_strategy_ready, business_model_ready, functions_list_ready,
+        mvp_planning_ready, unit_economics_ready, go_to_market_ready,
+    ])
+
     return {
-        "user_id": user_id,
-        "status": run.status,
-        "current_step": run.current_step,
-        "profile_ready":  crud.get_profile(db, user_id) is not None,
-        "problems_ready": crud.get_problems(db, user_id) is not None,
-        "intake_ready":    crud.get_idea_intake_json(db, user_id) is not None,
-        "idea_ready":      crud.get_idea(db, user_id) is not None,
-        "customers_ready":   crud.get_customers_json(db, user_id) is not None,
-        "competition_ready":     crud.get_competition_json(db, user_id) is not None,
-        "market_potential_ready": crud.get_market_potential_json(db, user_id) is not None,
-        "idea_strategy_ready":    crud.get_idea_strategy_json(db, user_id) is not None,
-        "business_model_ready":   crud.get_business_model_json(db, user_id) is not None,
-        "functions_list_ready":   crud.get_functions_list_json(db, user_id) is not None,
-        "mvp_planning_ready":     crud.get_mvp_planning_json(db, user_id) is not None,
-        "unit_economics_ready":   crud.get_unit_economics_json(db, user_id) is not None,
-        "go_to_market_ready":     crud.get_go_to_market_json(db, user_id) is not None,
-        "pipeline_complete":      crud.get_go_to_market_json(db, user_id) is not None,
+        "user_id":                user_id,
+        "status":                 run.status,
+        "current_step":           run.current_step,
+        # Automatic pipeline (steps 1-3)
+        "profile_ready":          profile_ready,
+        "problems_ready":         problems_ready,
+        "intake_ready":           intake_ready,
+        "idea_ready":             idea_ready,
+        # User-triggered analysis sections (steps 4-12)
+        "customers_ready":        customers_ready,
+        "competition_ready":      competition_ready,
+        "market_potential_ready": market_potential_ready,
+        "idea_strategy_ready":    idea_strategy_ready,
+        "business_model_ready":   business_model_ready,
+        "functions_list_ready":   functions_list_ready,
+        "mvp_planning_ready":     mvp_planning_ready,
+        "unit_economics_ready":   unit_economics_ready,
+        "go_to_market_ready":     go_to_market_ready,
+        # True only when ALL 12 sections are complete
+        "pipeline_complete":      pipeline_complete,
         "error": run.error,
     }
 
@@ -1644,9 +1681,12 @@ def get_mvp_planning(user_id: str, db=Depends(get_db)):
 
 def _load_unit_economics_deps(user_id: str, db: Any) -> tuple:
     """Pull all inputs the unit economics agent needs from DB."""
-    idea_row = crud.get_idea(db, user_id)
+    idea_row     = crud.get_idea(db, user_id)
+    problems_row = crud.get_problems(db, user_id)
     if not idea_row:
         raise HTTPException(status_code=425, detail="Idea not ready. Complete the pipeline first.")
+    if not problems_row:
+        raise HTTPException(status_code=425, detail="Problems not ready. Complete the pipeline first.")
     return (
         idea_row,
         crud.get_customers(db, user_id),
@@ -1954,4 +1994,197 @@ def get_go_to_market(user_id: str, db=Depends(get_db)):
         "user_id":      user_id,
         "go_to_market": row.data,
         "chat_history": row.chat_history or [],
+    }
+
+
+# ── General Bot ───────────────────────────────────────────────────────────────
+
+@router.post("/general-chat", dependencies=[Depends(verify_api_key)])
+def general_chat(data: GeneralBotInput) -> Dict[str, Any]:
+    """
+    General-purpose startup planning chatbot.
+
+    Understands natural language, classifies intent, and either:
+    - Answers from existing pipeline data in the DB
+    - Tells the caller which agent endpoint to trigger next
+    - Declines gracefully if the question is out of scope
+
+    Response shape
+    ──────────────
+    {
+      "user_id":          str
+      "reply":            str    — the assistant's message to show the user
+      "intent":           str    — classified intent (chat_about_data | run_section | …)
+      "section":          str | null
+      "action":           str    — "answered" | "route_to_section" | "declined" | "status"
+      "route_to_trigger": str | null  — e.g. "/pipeline/customers/abc123"
+      "trigger_needed":   bool   — True if the backend should POST to route_to_trigger
+      "chat_history_length": int
+    }
+
+    When trigger_needed = true, the backend proxy should:
+      1. Show the user the reply
+      2. POST to route_to_trigger with the X-API-KEY header
+      3. Return the agent's result to the frontend
+    """
+    from agents.generalBot import run_general_bot
+
+    result = run_general_bot(
+        user_id=data.user_id,
+        message=data.message,
+        history=data.history,
+    )
+
+    return {
+        "user_id": data.user_id,
+        **result,
+        "chat_history_length": len(data.history) + 2,
+    }
+
+
+@router.post("/general-chat/stream", dependencies=[Depends(verify_api_key)])
+def general_chat_stream(data: GeneralBotInput) -> StreamingResponse:
+    """
+    Streaming version of /general-chat for intents that produce a plain text
+    answer (chat_about_data, general_startup_chat, pipeline_status).
+
+    For routing intents (run_section, refine_section, start_pipeline, out_of_scope)
+    the stream returns a single short message — the actual agent work is done
+    by the caller posting to route_to_trigger separately.
+
+    SSE events:
+      data: {"type": "token",  "content": "..."}
+      data: {"type": "done",   "intent": "...", "action": "...", "route_to_trigger": "..." | null}
+    """
+    from agents.generalBot import (
+        _classify_intent,
+        _load_pipeline_snapshot,
+        _load_section_data,
+        _respond_from_data,
+        _respond_pipeline_status,
+        _respond_run_section,
+        _respond_refine_section,
+        OUT_OF_SCOPE_RESPONSE,
+    )
+    from db.connection import SessionLocal as _SL
+    from agents.PipelineRunner import groq_client, GROQ_MODEL
+    from System_Messages.general_bot_prompt import GENERAL_BOT_SYSTEM_PROMPT
+    import json as _json
+
+    # All validation and intent classification happens synchronously BEFORE
+    # the stream starts — so HTTP errors are returned normally, not buried in SSE.
+    with _SL() as db:
+        snapshot   = _load_pipeline_snapshot(data.user_id, db)
+
+    classification = _classify_intent(data.message, data.history, snapshot)
+    intent  = classification.get("intent", "general_startup_chat")
+    section = classification.get("section")
+
+    # Non-conversational intents: return a short non-streamed message
+    if intent in ("run_section", "refine_section", "start_pipeline"):
+        if intent == "run_section":
+            reply_text, route = _respond_run_section(section, snapshot)
+        elif intent == "refine_section":
+            reply_text, route = _respond_refine_section(section, snapshot)
+        else:
+            is_fresh   = not any(v["done"] for v in snapshot["sections"].values())
+            reply_text = (
+                "To start a new pipeline, your backend needs to call "
+                "POST /pipeline/run with your questionnaire data. "
+                + (
+                    "You don't have any sections generated yet — this is the right first step."
+                    if is_fresh else
+                    f"You already have {snapshot['completed_count']} sections. "
+                    "Starting over will replace them."
+                )
+            )
+            route = "/pipeline/run"
+
+        trigger = route.replace("{user_id}", data.user_id) if route else None
+
+        def _instant():
+            yield f"data: {_json.dumps({'type': 'token', 'content': reply_text})}\n\n"
+            yield f"data: {_json.dumps({'type': 'done', 'intent': intent, 'action': intent, 'route_to_trigger': trigger, 'trigger_needed': trigger is not None})}\n\n"
+
+        return StreamingResponse(_instant(), media_type="text/event-stream",
+                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    if intent == "out_of_scope":
+        def _decline():
+            yield f"data: {_json.dumps({'type': 'token', 'content': OUT_OF_SCOPE_RESPONSE})}\n\n"
+            yield f"data: {_json.dumps({'type': 'done', 'intent': intent, 'action': 'declined', 'route_to_trigger': None, 'trigger_needed': False})}\n\n"
+
+        return StreamingResponse(_decline(), media_type="text/event-stream",
+                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    # Conversational intents — stream the LLM reply
+    from System_Messages.general_bot_prompt import GENERAL_BOT_SYSTEM_PROMPT as _SYS
+
+    with _SL() as db:
+        snapshot     = _load_pipeline_snapshot(data.user_id, db)
+        section_data = _load_section_data(data.user_id, section, db) if section else None
+
+    from agents.generalBot import _snapshot_to_context_string
+
+    context_parts = [_snapshot_to_context_string(snapshot)]
+    if section_data and section:
+        context_parts.append(
+            f"\n=== DETAILED DATA FOR [{section}] ===\n"
+            + _json.dumps(section_data, indent=2)[:4000]
+        )
+
+    messages = [
+        {"role": "system", "content": _SYS},
+        {"role": "system", "content": "\n\n".join(context_parts)},
+        *data.history[-20:],
+        {"role": "user",   "content": data.message},
+    ]
+
+    def _on_complete(full_reply: str) -> Dict[str, Any]:
+        return {"intent": intent, "action": "answered", "route_to_trigger": None, "trigger_needed": False}
+
+    return _sse_chat_stream(
+        messages=messages,
+        groq_client=groq_client,
+        groq_model=GROQ_MODEL,
+        temperature=0.4,
+        max_tokens=600,
+        on_complete=_on_complete,
+    )
+
+
+# ── Explainer Bot ─────────────────────────────────────────────────────────────
+
+@router.post("/explain", dependencies=[Depends(verify_api_key)])
+def explain(data: ExplainerInput) -> Dict[str, Any]:
+    """
+    Read-only explainer bot — helps the founder understand existing pipeline data.
+
+    Unlike /general-chat, this bot:
+    - Never routes to agents or triggers new generation
+    - Only answers questions about already-generated data
+    - Optionally loads a specific section in full for detailed explanation
+
+    Use this for a "explain this section to me" sidebar in the UI.
+
+    Request:
+      user_id  : str
+      message  : str   — the question (e.g. "what does my LTV/CAC ratio mean?")
+      history  : list  — prior turns for context (optional)
+      section  : str   — which section to load in full (optional)
+                         e.g. "customers", "business_model", "unit_economics"
+    """
+    from agents.ExplainerBot import run_explainer_bot
+
+    result = run_explainer_bot(
+        user_id=data.user_id,
+        message=data.message,
+        history=data.history,
+        section=data.section,
+    )
+
+    return {
+        "user_id": data.user_id,
+        **result,
+        "chat_history_length": len(data.history) + 2,
     }

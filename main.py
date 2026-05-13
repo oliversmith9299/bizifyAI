@@ -22,7 +22,7 @@ from db.models import (
     AgentRun,
 )
 from sqlalchemy import MetaData, Table
-from routes.main import router as pipeline_router
+from routes import router as pipeline_router
 
 app = FastAPI(
     title="Bizify AI Service",
