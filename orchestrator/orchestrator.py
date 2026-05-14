@@ -17,8 +17,8 @@ The SINGLE entry point that runs the pipeline for any user.
                   ProblemDiscovery → IdeaChat → steps 4-12
 
 ─── Called by ────────────────────────────────────────────────────────────────
-  routes/main.py  /pipeline/run                   → run_new_user_pipeline()
-  routes/main.py  /idea-intake/run-problems/{uid} → run_returning_user_pipeline()
+  routes/pipeline.py    /pipeline/run                   → run_new_user_pipeline()
+  routes/idea_intake.py /idea-intake/run-problems/{uid} → run_returning_user_pipeline()
 """
 
 import logging

@@ -5,7 +5,8 @@
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(Sort-Object)",
       "Bash(Get-ChildItem -Path \"c:\\\\BIDT\\\\GP\\\\bizifyAI\" -Recurse -Include \"*.py\")",
-      "Bash(python -m pytest tests/ -q --tb=short)"
+      "Bash(python -m pytest tests/ -q --tb=short)",
+      "Bash(del routes\\\\main.py)"
     ]
   }
 }
