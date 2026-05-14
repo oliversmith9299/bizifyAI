@@ -1,34 +1,33 @@
 """
 agents/generalBot.py
 =====================
-General-purpose startup planning chatbot that routes between all 12 pipeline agents.
+Conversational startup planning assistant.
 
-Architecture — pure Python, no framework:
+The bot handles everything itself:
+  - Runs agents directly when the user asks (no "call this route" responses)
+  - Automatically detects which prerequisites are missing and asks the user
+    before running a long chain
+  - Saves every agent result to the DB so the user finds their work if they
+    close the chat
+  - Presents all results as natural conversation, never exposing API internals
 
-  User message
-       ↓
-  Step 1: Intent classification (one fast LLM call → structured JSON)
-       ↓
-       ├─ chat_about_data     → load section data from DB → answer from it
-       ├─ run_section         → trigger the right agent function
-       ├─ refine_section      → load section chat context → handle conversation
-       ├─ pipeline_status     → summarise completed vs pending steps
-       ├─ start_pipeline      → explain how to begin, return pipeline_trigger flag
-       ├─ general_startup_chat → answer from available data
-       └─ out_of_scope        → decline and redirect
-
-Why no LangGraph / LangChain / AutoGen:
-  The routing logic is a single conditional branch — not a graph, not parallel,
-  not stateful multi-agent. Adding a framework would add complexity without benefit
-  and break consistency with the other 12 agents that all use raw Python + Groq.
+Confirmation flow
+-----------------
+When prerequisites are missing the bot asks the user to confirm before running
+multiple sections.  The pending list is embedded in the reply as an invisible
+HTML comment  <!-- PENDING:section1,section2 -->  which markdown renderers hide
+from the user but which is preserved in the conversation history that the
+frontend echoes back on the next turn.  On the next message the bot checks for
+that marker, detects a confirm / decline intent, and acts accordingly.
 """
 
 import json
 import logging
+import re
 from typing import Optional
 
-from agents.utils import parse_llm_json
 from agents.config import client, GROQ_MODEL
+from agents.utils import parse_llm_json
 from db.connection import SessionLocal
 from db import crud
 from System_Messages.general_bot_prompt import (
@@ -39,130 +38,166 @@ from System_Messages.general_bot_prompt import (
 
 log = logging.getLogger(__name__)
 
-# Map section names (used in intents) to crud getter functions
-_SECTION_LOADERS: dict[str, str] = {
-    "profile":          "get_profile",
-    "problems":         "get_problems",
-    "idea_intake":      "get_idea_intake",
-    "idea":             "get_idea",
-    "customers":        "get_customers",
-    "competition":      "get_competition",
-    "market_potential": "get_market_potential",
-    "idea_strategy":    "get_idea_strategy",
-    "business_model":   "get_business_model",
-    "functions_list":   "get_functions_list",
-    "mvp_planning":     "get_mvp_planning",
-    "unit_economics":   "get_unit_economics",
-    "go_to_market":     "get_go_to_market",
-}
+# ─────────────────────────────────────────────────────────────────────────────
+# Section registry
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Map section names to their human-readable labels
 _SECTION_LABELS: dict[str, str] = {
-    "profile":          "Founder Profile Analysis",
+    "profile":          "Founder Profile",
     "problems":         "Problem Discovery",
-    "idea_intake":      "Idea Intake (Returning User)",
-    "idea":             "Idea Generation & Chat",
+    "idea":             "Idea Generation",
+    "idea_intake":      "Idea Definition",
     "customers":        "Customer Analysis",
     "competition":      "Competition Analysis",
     "market_potential": "Market Potential",
     "idea_strategy":    "Idea Strategy",
     "business_model":   "Business Model",
-    "functions_list":   "Product Functions List",
+    "functions_list":   "Product Functions",
     "mvp_planning":     "MVP Planning",
     "unit_economics":   "Unit Economics",
     "go_to_market":     "Go-To-Market Plan",
 }
 
-# Map section names to the API endpoint route to trigger them
-_SECTION_ROUTES: dict[str, str] = {
-    "customers":        "/pipeline/customers/{user_id}",
-    "competition":      "/pipeline/competition/{user_id}",
-    "market_potential": "/pipeline/market-potential/{user_id}",
-    "idea_strategy":    "/pipeline/idea-strategy/{user_id}",
-    "business_model":   "/pipeline/business-model/{user_id}",
-    "functions_list":   "/pipeline/functions-list/{user_id}",
-    "mvp_planning":     "/pipeline/mvp-planning/{user_id}",
-    "unit_economics":   "/pipeline/unit-economics/{user_id}",
-    "go_to_market":     "/pipeline/go-to-market/{user_id}",
+# Analysis sections the bot can run directly (excludes pipeline-level sections
+# that are handled by the onboarding flow: profile, problems, idea)
+_RUNNABLE_SECTIONS = {
+    "idea_intake", "customers", "competition", "market_potential",
+    "idea_strategy", "business_model", "functions_list",
+    "mvp_planning", "unit_economics", "go_to_market",
 }
+
+# Sections that should exist before running a given section.
+# The bot will ask the user to confirm before auto-running the full chain.
+_SHOULD_RUN_BEFORE: dict[str, list[str]] = {
+    "idea_intake":      [],
+    "customers":        [],
+    "competition":      [],
+    "market_potential": [],
+    "idea_strategy":    ["customers", "competition", "market_potential"],
+    "business_model":   ["customers", "idea_strategy"],
+    "functions_list":   ["business_model"],
+    "mvp_planning":     ["functions_list"],
+    "unit_economics":   ["business_model"],
+    "go_to_market":     ["customers", "unit_economics"],
+}
+
+# Canonical run order so chains always execute in the right sequence
+_SECTION_ORDER = [
+    "idea_intake", "customers", "competition", "market_potential",
+    "idea_strategy", "business_model", "functions_list",
+    "mvp_planning", "unit_economics", "go_to_market",
+]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pending-confirmation helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+_PENDING_RE = re.compile(r"<!--PENDING:([^-]+?)-->")
+
+
+def _embed_pending(reply: str, sections: list[str]) -> str:
+    """Append an invisible HTML comment carrying the pending section list."""
+    return reply + f"\n<!--PENDING:{','.join(sections)}-->"
+
+
+def _extract_pending(history: list) -> list[str]:
+    """
+    Scan the last assistant message in history for a PENDING marker.
+    Returns the section list, or [] if not found.
+    """
+    for msg in reversed(history):
+        if msg.get("role") == "assistant":
+            m = _PENDING_RE.search(msg.get("content", ""))
+            if m:
+                return [s.strip() for s in m.group(1).split(",") if s.strip()]
+    return []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Context snapshot
+# Pipeline snapshot
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _load_pipeline_snapshot(user_id: str, db) -> dict:
     """
-    Load a compact snapshot of everything the user has done so far.
-    Returns a dict with status flags and key insight summaries per section.
-    This is the bot's "world knowledge" about this specific user.
+    Compact view of everything the user has done so far.
+    Used by the LLM as "world knowledge" about this founder.
     """
-    snapshot: dict = {"user_id": user_id, "sections": {}}
-
-    # Check each section and extract its most important insight for the summary
     getters = {
-        "idea": ("get_idea", lambda r: r.current_idea[:300] if r and r.current_idea else None),
-        "customers": ("get_customers", lambda r: r.data.get("primary_segment", {}).get("reason", "") if r else None),
-        "competition": ("get_competition", lambda r: r.data.get("summary", "") if r else None),
-        "market_potential": ("get_market_potential", lambda r: r.data.get("summary", "") if r else None),
-        "idea_strategy": ("get_idea_strategy", lambda r: r.data.get("core_promise", "") if r else None),
-        "business_model": ("get_business_model", lambda r: r.data.get("business_model_type", "") if r else None),
-        "functions_list": ("get_functions_list", lambda r: r.data.get("product_type", "") if r else None),
-        "mvp_planning": ("get_mvp_planning", lambda r: r.data.get("mvp_goal", "") if r else None),
-        "unit_economics": ("get_unit_economics", lambda r: r.data.get("overall_viability", {}).get("viability_reasoning", "") if r else None),
-        "go_to_market": ("get_go_to_market", lambda r: r.data.get("summary", "") if r else None),
-        "profile": ("get_profile", lambda r: r.data.get("founder_profile", {}).get("experience_level", "") if r else None),
-        "problems": ("get_problems", lambda r: f"{len(r.data.get('problems', []))} problems found" if r else None),
+        "idea":             ("get_idea",             lambda r: r.current_idea[:300] if r and r.current_idea else None),
+        "idea_intake":      ("get_idea_intake",       lambda r: r.idea_summary[:200] if r and r.idea_summary else None),
+        "customers":        ("get_customers",         lambda r: r.data.get("summary", "")[:200] if r else None),
+        "competition":      ("get_competition",       lambda r: r.data.get("summary", "")[:200] if r else None),
+        "market_potential": ("get_market_potential",  lambda r: r.data.get("summary", "")[:200] if r else None),
+        "idea_strategy":    ("get_idea_strategy",     lambda r: r.data.get("core_promise", "")[:200] if r else None),
+        "business_model":   ("get_business_model",    lambda r: r.data.get("business_model_type", "") if r else None),
+        "functions_list":   ("get_functions_list",    lambda r: r.data.get("product_type", "") if r else None),
+        "mvp_planning":     ("get_mvp_planning",      lambda r: r.data.get("mvp_goal", "")[:200] if r else None),
+        "unit_economics":   ("get_unit_economics",    lambda r: r.data.get("overall_viability", {}).get("verdict", "") if r else None),
+        "go_to_market":     ("get_go_to_market",      lambda r: r.data.get("summary", "")[:200] if r else None),
+        "profile":          ("get_profile",           lambda r: r.data.get("founder_profile", {}).get("experience_level", "") if r else None),
+        "problems":         ("get_problems",          lambda r: f"{len(r.data.get('problems', []))} problems found" if r else None),
     }
 
+    sections: dict = {}
     for section, (getter_name, extractor) in getters.items():
         getter = getattr(crud, getter_name, None)
-        if getter:
-            row = getter(db, user_id)
-            insight = extractor(row) if row else None
-            snapshot["sections"][section] = {
-                "done":    row is not None,
-                "label":   _SECTION_LABELS.get(section, section),
-                "insight": (insight or "")[:200] if insight else "",
-            }
+        row    = getter(db, user_id) if getter else None
+        insight = extractor(row) if row else None
+        sections[section] = {
+            "done":    row is not None,
+            "label":   _SECTION_LABELS.get(section, section),
+            "insight": (insight or "")[:200],
+        }
 
-    # Count completed sections
-    done_count = sum(1 for s in snapshot["sections"].values() if s["done"])
-    snapshot["completed_count"] = done_count
-    snapshot["total_sections"]  = len(snapshot["sections"])
+    done_count = sum(1 for s in sections.values() if s["done"])
+    return {
+        "user_id":         user_id,
+        "sections":        sections,
+        "completed_count": done_count,
+        "total_sections":  len(sections),
+    }
 
-    return snapshot
 
-
-def _snapshot_to_context_string(snapshot: dict) -> str:
-    """Convert the pipeline snapshot into a readable context string for the LLM."""
+def _snapshot_to_context(snapshot: dict) -> str:
     lines = [
         f"=== PIPELINE STATUS ({snapshot['completed_count']}/{snapshot['total_sections']} sections complete) ===",
     ]
-
-    done   = [(k, v) for k, v in snapshot["sections"].items() if v["done"]]
+    done    = [(k, v) for k, v in snapshot["sections"].items() if v["done"]]
     pending = [(k, v) for k, v in snapshot["sections"].items() if not v["done"]]
 
     if done:
-        lines.append("\nCOMPLETED SECTIONS:")
+        lines.append("\nCOMPLETED:")
         for _, v in done:
-            insight = f" — {v['insight']}" if v["insight"] else ""
-            lines.append(f"  ✅ {v['label']}{insight[:120]}")
-
+            suffix = f" — {v['insight'][:120]}" if v["insight"] else ""
+            lines.append(f"  ✅ {v['label']}{suffix}")
     if pending:
-        lines.append("\nPENDING SECTIONS (not yet generated):")
+        lines.append("\nNOT YET GENERATED:")
         for _, v in pending:
             lines.append(f"  ⬜ {v['label']}")
-
     return "\n".join(lines)
 
 
-def _load_section_data(user_id: str, section: str, db) -> Optional[dict]:
-    """Load the full data for a specific section from DB."""
-    getter_info = _SECTION_LOADERS.get(section)
-    if not getter_info:
+def _load_section_data(user_id: str, section: Optional[str], db) -> Optional[dict]:
+    """Load full data for a specific section."""
+    loaders = {
+        "profile":          "get_profile",
+        "problems":         "get_problems",
+        "idea":             "get_idea",
+        "idea_intake":      "get_idea_intake",
+        "customers":        "get_customers",
+        "competition":      "get_competition",
+        "market_potential": "get_market_potential",
+        "idea_strategy":    "get_idea_strategy",
+        "business_model":   "get_business_model",
+        "functions_list":   "get_functions_list",
+        "mvp_planning":     "get_mvp_planning",
+        "unit_economics":   "get_unit_economics",
+        "go_to_market":     "get_go_to_market",
+    }
+    getter_name = loaders.get(section or "")
+    if not getter_name:
         return None
-    getter = getattr(crud, getter_info, None)
+    getter = getattr(crud, getter_name, None)
     if not getter:
         return None
     row = getter(db, user_id)
@@ -171,7 +206,7 @@ def _load_section_data(user_id: str, section: str, db) -> Optional[dict]:
     if hasattr(row, "data"):
         return row.data
     if hasattr(row, "current_idea"):
-        return {"current_idea": row.current_idea, "chat_history_length": len(row.chat_history or [])}
+        return {"current_idea": row.current_idea}
     return None
 
 
@@ -179,300 +214,427 @@ def _load_section_data(user_id: str, section: str, db) -> Optional[dict]:
 # Intent classification
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _classify_intent(
-    message: str,
-    history: list,
-    snapshot: dict,
-) -> dict:
-    """
-    One fast LLM call to classify what the user wants.
-    Returns dict with intent, section, confidence, reasoning.
-    """
-    # Build a minimal snapshot summary for the classifier
-    done_sections   = [k for k, v in snapshot["sections"].items() if v["done"]]
+def _classify_intent(message: str, history: list, snapshot: dict) -> dict:
+    done_sections    = [k for k, v in snapshot["sections"].items() if v["done"]]
     pending_sections = [k for k, v in snapshot["sections"].items() if not v["done"]]
 
     context = (
         f"Completed sections: {done_sections}\n"
-        f"Pending sections: {pending_sections}"
+        f"Pending sections: {pending_sections}\n"
+        f"Last assistant message (for confirm/decline detection): "
+        + (history[-1]["content"][:300] if history and history[-1].get("role") == "assistant" else "none")
     )
 
     messages = [
         {"role": "system", "content": INTENT_CLASSIFIER_PROMPT},
         {"role": "system", "content": context},
-        *history[-6:],   # only recent turns — classifier is fast
-        {"role": "user",  "content": message},
+        *history[-6:],
+        {"role": "user",   "content": message},
     ]
-
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=messages,
-        temperature=0.1,   # very deterministic for classification
-        max_tokens=200,
-    )
 
     try:
-        return parse_llm_json(response.choices[0].message.content)
-    except Exception:
-        # Fallback: if classification fails, treat as general chat
-        return {"intent": "general_startup_chat", "section": None, "confidence": 0.5, "reasoning": "parse error"}
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Response generators per intent
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _respond_from_data(
-    message: str,
-    history: list,
-    section: Optional[str],
-    snapshot: dict,
-    section_data: Optional[dict],
-) -> str:
-    """Answer a question grounded in the user's actual pipeline data."""
-    context_parts = [_snapshot_to_context_string(snapshot)]
-
-    if section_data:
-        context_parts.append(
-            f"\n=== DETAILED DATA FOR [{_SECTION_LABELS.get(section, section)}] ===\n"
-            + json.dumps(section_data, indent=2)[:4000]
+        resp = client.chat.completions.create(
+            model=GROQ_MODEL, messages=messages, temperature=0.1, max_tokens=200,
         )
-
-    messages = [
-        {"role": "system",  "content": GENERAL_BOT_SYSTEM_PROMPT},
-        {"role": "system",  "content": "\n\n".join(context_parts)},
-        *history[-20:],
-        {"role": "user",    "content": message},
-    ]
-
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=messages,
-        temperature=0.4,
-        max_tokens=600,
-    )
-
-    return response.choices[0].message.content.strip()
+        return parse_llm_json(resp.choices[0].message.content)
+    except Exception:
+        return {"intent": "general_startup_chat", "section": None, "confidence": 0.5}
 
 
-def _respond_pipeline_status(snapshot: dict, history: list, message: str) -> str:
-    """Summarise pipeline progress and recommend the next step."""
-    context = _snapshot_to_context_string(snapshot)
+# ─────────────────────────────────────────────────────────────────────────────
+# Agent runners  (run agent + save to DB)
+# ─────────────────────────────────────────────────────────────────────────────
 
-    # Determine next recommended step
-    pending = [k for k, v in snapshot["sections"].items() if not v["done"]]
-    next_step = pending[0] if pending else None
-    next_label = _SECTION_LABELS.get(next_step, next_step) if next_step else None
+def _run_one_section(section: str, user_id: str, db) -> dict:
+    """
+    Import the right agent, call it with all available context from DB,
+    save the result to DB, and return the result dict.
+    """
+    idea_row     = crud.get_idea(db, user_id)
+    problems_row = crud.get_problems(db, user_id)
+    idea_text    = idea_row.current_idea if idea_row else ""
+    problems     = problems_row.data if problems_row else {}
 
-    status_note = (
-        f"\nNEXT RECOMMENDED STEP: Generate '{next_label}' "
-        f"(tell the user to ask: 'generate my {next_step}')"
-        if next_label
-        else "\nAll sections complete. Encourage the founder to review and refine."
+    if section == "customers":
+        from agents.FourCustomersAgent import run_customers_analysis
+        profile_row = crud.get_profile(db, user_id)
+        result = run_customers_analysis(
+            user_id=user_id,
+            idea=idea_text,
+            problems=problems,
+            profile=profile_row.data if profile_row else None,
+        )
+        crud.save_customers(db, user_id, result)
+
+    elif section == "competition":
+        from agents.FiveCompetitionAgent import run_competition_analysis
+        customers_row = crud.get_customers(db, user_id)
+        result = run_competition_analysis(
+            user_id=user_id,
+            idea=idea_text,
+            problems=problems,
+            customers=customers_row.data if customers_row else None,
+        )
+        crud.save_competition(db, user_id, result)
+
+    elif section == "market_potential":
+        from agents.SixMaketPotential import run_market_potential
+        customers_row   = crud.get_customers(db, user_id)
+        competition_row = crud.get_competition(db, user_id)
+        result = run_market_potential(
+            user_id=user_id,
+            idea=idea_text,
+            problems=problems,
+            customers=customers_row.data   if customers_row   else None,
+            competition=competition_row.data if competition_row else None,
+        )
+        crud.save_market_potential(db, user_id, result)
+
+    elif section == "idea_strategy":
+        from agents.SevenIdeaStrategy import run_idea_strategy
+        customers_row   = crud.get_customers(db, user_id)
+        competition_row = crud.get_competition(db, user_id)
+        mp_row          = crud.get_market_potential(db, user_id)
+        result = run_idea_strategy(
+            user_id=user_id,
+            idea=idea_text,
+            problems=problems,
+            customers=customers_row.data     if customers_row   else None,
+            competition=competition_row.data if competition_row else None,
+            market_potential=mp_row.data     if mp_row          else None,
+        )
+        crud.save_idea_strategy(db, user_id, result)
+
+    elif section == "business_model":
+        from agents.EightBusinessModel import run_business_model
+        customers_row   = crud.get_customers(db, user_id)
+        competition_row = crud.get_competition(db, user_id)
+        mp_row          = crud.get_market_potential(db, user_id)
+        strategy_row    = crud.get_idea_strategy(db, user_id)
+        result = run_business_model(
+            user_id=user_id,
+            idea=idea_text,
+            problems=problems,
+            customers=customers_row.data     if customers_row   else None,
+            competition=competition_row.data if competition_row else None,
+            market_potential=mp_row.data     if mp_row          else None,
+            strategy=strategy_row.data       if strategy_row    else None,
+        )
+        crud.save_business_model(db, user_id, result)
+
+    elif section == "functions_list":
+        from agents.NineFunctionsList import run_functions_list
+        customers_row   = crud.get_customers(db, user_id)
+        competition_row = crud.get_competition(db, user_id)
+        mp_row          = crud.get_market_potential(db, user_id)
+        strategy_row    = crud.get_idea_strategy(db, user_id)
+        bm_row          = crud.get_business_model(db, user_id)
+        result = run_functions_list(
+            user_id=user_id,
+            idea=idea_text,
+            problems=problems,
+            customers=customers_row.data     if customers_row   else None,
+            competition=competition_row.data if competition_row else None,
+            market_potential=mp_row.data     if mp_row          else None,
+            strategy=strategy_row.data       if strategy_row    else None,
+            business_model=bm_row.data       if bm_row          else None,
+        )
+        crud.save_functions_list(db, user_id, result)
+
+    elif section == "mvp_planning":
+        from agents.TenMVPPlanning import run_mvp_planning
+        customers_row = crud.get_customers(db, user_id)
+        mp_row        = crud.get_market_potential(db, user_id)
+        strategy_row  = crud.get_idea_strategy(db, user_id)
+        bm_row        = crud.get_business_model(db, user_id)
+        fl_row        = crud.get_functions_list(db, user_id)
+        result = run_mvp_planning(
+            user_id=user_id,
+            idea=idea_text,
+            problems=problems,
+            customers=customers_row.data if customers_row else None,
+            market_potential=mp_row.data if mp_row        else None,
+            strategy=strategy_row.data   if strategy_row  else None,
+            business_model=bm_row.data   if bm_row        else None,
+            functions_list=fl_row.data   if fl_row        else None,
+        )
+        crud.save_mvp_planning(db, user_id, result)
+
+    elif section == "unit_economics":
+        from agents.ElevenUnitEconomicsAgent import run_unit_economics
+        customers_row = crud.get_customers(db, user_id)
+        mp_row        = crud.get_market_potential(db, user_id)
+        strategy_row  = crud.get_idea_strategy(db, user_id)
+        bm_row        = crud.get_business_model(db, user_id)
+        mvp_row       = crud.get_mvp_planning(db, user_id)
+        result = run_unit_economics(
+            user_id=user_id,
+            idea=idea_text,
+            customers=customers_row.data if customers_row else None,
+            market_potential=mp_row.data if mp_row        else None,
+            strategy=strategy_row.data   if strategy_row  else None,
+            business_model=bm_row.data   if bm_row        else None,
+            mvp_planning=mvp_row.data    if mvp_row       else None,
+        )
+        crud.save_unit_economics(db, user_id, result)
+
+    elif section == "go_to_market":
+        from agents.TwelveGoToMarket import run_go_to_market
+        customers_row   = crud.get_customers(db, user_id)
+        competition_row = crud.get_competition(db, user_id)
+        mp_row          = crud.get_market_potential(db, user_id)
+        strategy_row    = crud.get_idea_strategy(db, user_id)
+        bm_row          = crud.get_business_model(db, user_id)
+        mvp_row         = crud.get_mvp_planning(db, user_id)
+        ue_row          = crud.get_unit_economics(db, user_id)
+        result = run_go_to_market(
+            user_id=user_id,
+            idea=idea_text,
+            problems=problems,
+            customers=customers_row.data     if customers_row   else None,
+            competition=competition_row.data if competition_row else None,
+            market_potential=mp_row.data     if mp_row          else None,
+            strategy=strategy_row.data       if strategy_row    else None,
+            business_model=bm_row.data       if bm_row          else None,
+            mvp_planning=mvp_row.data        if mvp_row         else None,
+            unit_economics=ue_row.data       if ue_row          else None,
+        )
+        crud.save_go_to_market(db, user_id, result)
+
+    else:
+        raise ValueError(f"Unknown runnable section: {section!r}")
+
+    return result
+
+
+def _run_sections_in_order(sections: list[str], user_id: str, db) -> dict[str, dict]:
+    """Run multiple sections sequentially and return {section: result}."""
+    results: dict[str, dict] = {}
+    for section in sections:
+        log.info(f"[GeneralBot] running section={section} for user={user_id}")
+        results[section] = _run_one_section(section, user_id, db)
+    return results
+
+
+def _build_run_plan(requested: str, snapshot: dict) -> list[str]:
+    """
+    Return the ordered list of sections to run, including any prerequisites
+    that are not yet done.  The requested section is always last.
+    """
+    prereqs  = _SHOULD_RUN_BEFORE.get(requested, [])
+    missing  = [p for p in prereqs if not snapshot["sections"].get(p, {}).get("done", False)]
+
+    plan: list[str] = []
+    for section in _SECTION_ORDER:
+        if section in missing:
+            plan.append(section)
+    plan.append(requested)
+    return plan
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Natural language response generators
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _summarise_results(sections_run: list[str], results: dict[str, dict], snapshot: dict) -> str:
+    """
+    Ask the LLM to present the agent results as a natural conversational summary.
+    """
+    context_parts = [_snapshot_to_context(snapshot)]
+    for section in sections_run:
+        label  = _SECTION_LABELS.get(section, section)
+        data   = json.dumps(results.get(section, {}), indent=2)[:3000]
+        context_parts.append(f"=== JUST GENERATED: {label} ===\n{data}")
+
+    labels = [_SECTION_LABELS.get(s, s) for s in sections_run]
+    prompt = (
+        f"I just generated the following for the founder: {', '.join(labels)}. "
+        "Summarise the most important insights from this analysis in a natural, "
+        "conversational way — 3 to 5 key points. End by suggesting what to explore next."
     )
 
     messages = [
         {"role": "system", "content": GENERAL_BOT_SYSTEM_PROMPT},
-        {"role": "system", "content": context + status_note},
-        *history[-10:],
+        {"role": "system", "content": "\n\n".join(context_parts)},
+        {"role": "user",   "content": prompt},
+    ]
+
+    resp = client.chat.completions.create(
+        model=GROQ_MODEL, messages=messages, temperature=0.5, max_tokens=600,
+    )
+    return resp.choices[0].message.content.strip()
+
+
+def _respond_from_data(message: str, history: list, section: Optional[str],
+                       snapshot: dict, section_data: Optional[dict]) -> str:
+    """Answer a question grounded in the user's pipeline data."""
+    context_parts = [_snapshot_to_context(snapshot)]
+    if section_data and section:
+        label = _SECTION_LABELS.get(section, section)
+        context_parts.append(
+            f"=== {label} DATA ===\n"
+            + json.dumps(section_data, indent=2)[:4000]
+        )
+
+    messages = [
+        {"role": "system", "content": GENERAL_BOT_SYSTEM_PROMPT},
+        {"role": "system", "content": "\n\n".join(context_parts)},
+        *history[-20:],
         {"role": "user",   "content": message},
     ]
 
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=messages,
-        temperature=0.3,
-        max_tokens=500,
+    resp = client.chat.completions.create(
+        model=GROQ_MODEL, messages=messages, temperature=0.4, max_tokens=600,
     )
-
-    return response.choices[0].message.content.strip()
-
-
-def _respond_run_section(section: Optional[str], snapshot: dict) -> tuple[str, Optional[str]]:
-    """
-    Tell the user the bot will run the section, and return the route to trigger.
-    Returns (reply_text, route_to_trigger).
-    """
-    if not section:
-        return (
-            "I can run any of these sections for you: "
-            + ", ".join(_SECTION_LABELS[s] for s in _SECTION_ROUTES)
-            + ". Which one would you like?",
-            None,
-        )
-
-    label = _SECTION_LABELS.get(section, section)
-    is_done = snapshot["sections"].get(section, {}).get("done", False)
-
-    if section not in _SECTION_ROUTES:
-        return (
-            f"The '{label}' section is generated automatically during the main pipeline. "
-            "Make sure the pipeline has run first by asking your backend to call POST /pipeline/run.",
-            None,
-        )
-
-    route = _SECTION_ROUTES[section]
-    action = "Regenerating" if is_done else "Generating"
-    return (
-        f"{action} your **{label}**... This will take a moment. "
-        f"{'The previous result will be replaced.' if is_done else ''}",
-        route,
-    )
-
-
-def _respond_refine_section(section: Optional[str], snapshot: dict) -> tuple[str, Optional[str]]:
-    """Tell the user how to refine a section via its section-specific chat."""
-    if not section:
-        return (
-            "Which section would you like to refine? I can help with: "
-            + ", ".join(_SECTION_LABELS[s] for s in _SECTION_ROUTES)
-            + ".",
-            None,
-        )
-
-    label    = _SECTION_LABELS.get(section, section)
-    is_done  = snapshot["sections"].get(section, {}).get("done", False)
-
-    if not is_done:
-        return (
-            f"You haven't generated the **{label}** yet. "
-            f"Ask me to 'generate my {section}' first, then we can refine it.",
-            None,
-        )
-
-    chat_route = _SECTION_ROUTES.get(section, "").replace("}", "/chat}")
-    return (
-        f"To refine your **{label}**, use the section chat endpoint at "
-        f"`{chat_route}`. Send your refinement request there and I'll apply it. "
-        f"What change do you want to make?",
-        chat_route if chat_route else None,
-    )
+    return resp.choices[0].message.content.strip()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Main entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_general_bot(
-    user_id: str,
-    message: str,
-    history: list,
-) -> dict:
+def run_general_bot(user_id: str, message: str, history: list) -> dict:
     """
-    Process a user message and return a structured response.
-
-    Parameters
-    ----------
-    user_id : str   — the founder's user ID
-    message : str   — the user's current message
-    history : list  — prior conversation turns [{"role": ..., "content": ...}]
+    Process one conversation turn.
 
     Returns
     -------
     {
-      "reply":            str   — the assistant's response
-      "intent":           str   — what was classified
-      "section":          str | None
-      "action":           str   — "answered" | "route_to_section" | "declined" | "status"
-      "route_to_trigger": str | None  — if action is route_to_section, the API path
-      "trigger_needed":   bool  — True if the backend should call an agent endpoint
+      "reply":   str   — the assistant's response (may contain invisible <!--PENDING:...-->)
+      "intent":  str   — classified intent
+      "section": str | None
+      "action":  str   — "answered" | "ran_sections" | "needs_confirmation" |
+                         "declined" | "status"
+      # kept for backwards compatibility — always None / False now
+      "route_to_trigger": None
+      "trigger_needed":   False
     }
     """
     db = SessionLocal()
     try:
-        # ── Load pipeline state ───────────────────────────────────────────────
         snapshot = _load_pipeline_snapshot(user_id, db)
 
-        # ── Classify intent ───────────────────────────────────────────────────
+        # ── Step 1: check for a pending confirmation from the previous turn ──────
+        pending = _extract_pending(history)
+        if pending:
+            classification = _classify_intent(message, history, snapshot)
+            intent = classification.get("intent", "general_startup_chat")
+
+            if intent == "confirm_action":
+                log.info(f"[GeneralBot] confirmed run of {pending} for user={user_id}")
+                results  = _run_sections_in_order(pending, user_id, db)
+                snapshot = _load_pipeline_snapshot(user_id, db)   # refresh
+                reply    = _summarise_results(pending, results, snapshot)
+                return _resp(reply, "confirm_action", pending[-1], "ran_sections")
+
+            if intent == "decline_action":
+                reply = "No problem! Let me know if you want to run something else or have any questions about your startup."
+                return _resp(reply, "decline_action", None, "declined")
+            # else: treat as a fresh message (pending was stale)
+
+        # ── Step 2: classify the fresh message ───────────────────────────────────
         classification = _classify_intent(message, history, snapshot)
         intent  = classification.get("intent", "general_startup_chat")
         section = classification.get("section")
-
         log.info(f"[GeneralBot] user={user_id} intent={intent} section={section}")
 
-        # ── Route by intent ───────────────────────────────────────────────────
-
+        # ── Out of scope ──────────────────────────────────────────────────────────
         if intent == "out_of_scope":
-            return {
-                "reply":            OUT_OF_SCOPE_RESPONSE,
-                "intent":           intent,
-                "section":          section,
-                "action":           "declined",
-                "route_to_trigger": None,
-                "trigger_needed":   False,
-            }
+            return _resp(OUT_OF_SCOPE_RESPONSE, intent, section, "declined")
 
+        # ── Pipeline status ───────────────────────────────────────────────────────
         if intent == "pipeline_status":
-            reply = _respond_pipeline_status(snapshot, history, message)
-            return {
-                "reply":            reply,
-                "intent":           intent,
-                "section":          section,
-                "action":           "status",
-                "route_to_trigger": None,
-                "trigger_needed":   False,
-            }
+            reply = _respond_from_data(message, history, None, snapshot, None)
+            return _resp(reply, intent, None, "status")
 
-        if intent == "start_pipeline":
-            # Pipeline start is handled by the backend (/pipeline/run)
-            is_fresh = not any(v["done"] for v in snapshot["sections"].values())
-            reply = (
-                "To start a new pipeline, your backend needs to call "
-                "POST /pipeline/run with your questionnaire data. "
-                + (
-                    "You don't have any sections generated yet — this is the right first step."
-                    if is_fresh
-                    else f"You already have {snapshot['completed_count']} sections. "
-                         "Starting over will replace them."
+        # ── Idea intake (conversational agent — proxied turn by turn) ─────────────
+        if intent == "run_section" and section == "idea_intake":
+            has_profile = snapshot["sections"].get("profile", {}).get("done", False)
+            if not has_profile:
+                reply = (
+                    "It looks like you haven't completed your startup profile yet. "
+                    "Once that's set up I can help you define and refine your business idea!"
                 )
+                return _resp(reply, intent, section, "answered")
+
+            from agents.ThreeIdeaIntakeAgent import run_idea_intake_chat
+            result = run_idea_intake_chat(user_id=user_id, message=message, history=history)
+            crud.save_idea_intake(db, user_id, result)
+            reply = result.get("reply", "Tell me more about your idea.")
+            return _resp(reply, intent, section, "answered")
+
+        # ── Run an analysis section ───────────────────────────────────────────────
+        if intent == "run_section" and section in _RUNNABLE_SECTIONS:
+            # Hard requirement: idea + problems must exist (set by the pipeline)
+            if not crud.get_idea(db, user_id) or not crud.get_problems(db, user_id):
+                reply = (
+                    "I can't run that analysis yet — your startup idea and problem "
+                    "discovery haven't been set up. Have you completed the onboarding?"
+                )
+                return _resp(reply, intent, section, "answered")
+
+            plan         = _build_run_plan(section, snapshot)
+            missing_plan = plan[:-1]   # everything except the requested section
+
+            if not missing_plan:
+                # No prerequisites needed — just run it
+                label   = _SECTION_LABELS.get(section, section)
+                result  = _run_one_section(section, user_id, db)
+                snapshot = _load_pipeline_snapshot(user_id, db)
+                reply   = _summarise_results([section], {section: result}, snapshot)
+                return _resp(reply, intent, section, "ran_sections")
+
+            # Prerequisites are missing — ask for confirmation
+            missing_labels = [_SECTION_LABELS.get(s, s) for s in missing_plan]
+            target_label   = _SECTION_LABELS.get(section, section)
+            confirmation_text = (
+                f"To generate your **{target_label}**, I need to run "
+                f"{len(missing_plan)} other {'analysis' if len(missing_plan) == 1 else 'analyses'} first:\n\n"
+                + "\n".join(f"- {l}" for l in missing_labels)
+                + f"\n\nShall I go ahead and run all {len(plan)} of them? Just say **yes** to confirm."
             )
-            return {
-                "reply":            reply,
-                "intent":           intent,
-                "section":          None,
-                "action":           "start_pipeline_instruction",
-                "route_to_trigger": "/pipeline/run",
-                "trigger_needed":   False,  # backend handles this, not the bot
-            }
+            reply = _embed_pending(confirmation_text, plan)
+            return _resp(reply, intent, section, "needs_confirmation")
 
-        if intent == "run_section":
-            reply, route = _respond_run_section(section, snapshot)
-            return {
-                "reply":            reply,
-                "intent":           intent,
-                "section":          section,
-                "action":           "route_to_section",
-                "route_to_trigger": route.replace("{user_id}", user_id) if route else None,
-                "trigger_needed":   route is not None,
-            }
+        # ── Refine an existing section ────────────────────────────────────────────
+        if intent == "refine_section" and section:
+            is_done = snapshot["sections"].get(section, {}).get("done", False)
+            label   = _SECTION_LABELS.get(section, section)
+            if not is_done:
+                reply = (
+                    f"I haven't generated your **{label}** yet. "
+                    f"Want me to run it now?"
+                )
+                return _resp(reply, "run_section", section, "answered")
 
-        if intent == "refine_section":
-            reply, route = _respond_refine_section(section, snapshot)
-            return {
-                "reply":            reply,
-                "intent":           intent,
-                "section":          section,
-                "action":           "refine_section_instruction",
-                "route_to_trigger": route.replace("{user_id}", user_id) if route else None,
-                "trigger_needed":   False,  # user must call the section chat endpoint directly
-            }
+            # Load section data and refine via chat
+            section_data = _load_section_data(user_id, section, db)
+            reply = _respond_from_data(message, history, section, snapshot, section_data)
+            return _resp(reply, intent, section, "answered")
 
-        # Default: chat_about_data or general_startup_chat
+        # ── Default: chat from data ───────────────────────────────────────────────
         section_data = _load_section_data(user_id, section, db) if section else None
         reply = _respond_from_data(message, history, section, snapshot, section_data)
-
-        return {
-            "reply":            reply,
-            "intent":           intent,
-            "section":          section,
-            "action":           "answered",
-            "route_to_trigger": None,
-            "trigger_needed":   False,
-        }
+        return _resp(reply, intent, section, "answered")
 
     except Exception as e:
-        log.error(f"[GeneralBot] error for user {user_id}: {e}", exc_info=True)
+        log.error(f"[GeneralBot] error for user={user_id}: {e}", exc_info=True)
         raise
-
     finally:
         db.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Internal helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _resp(reply: str, intent: str, section: Optional[str], action: str) -> dict:
+    return {
+        "reply":            reply,
+        "intent":           intent,
+        "section":          section,
+        "action":           action,
+        # kept for backwards compatibility — frontend no longer needs to act on these
+        "route_to_trigger": None,
+        "trigger_needed":   False,
+    }
