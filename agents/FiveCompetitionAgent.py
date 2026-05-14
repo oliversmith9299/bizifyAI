@@ -26,6 +26,7 @@ import json
 import logging
 
 from agents.utils import gather_sources, parse_llm_json, truncate_sources
+from agents.schemas import validate_section_output
 from agents.config import client, GROQ_MODEL, SERPER_API_KEY
 from db.connection import SessionLocal
 from db import crud
@@ -222,7 +223,7 @@ def run_competition_analysis(
     )
 
     raw    = response.choices[0].message.content
-    result = parse_llm_json(raw)
+    result = validate_section_output("competition", parse_llm_json(raw))
     result["source_mode"]  = source_mode
     result["sources_used"] = len(sources)
     result["sources_list"] = [{"url": s["url"], "title": s.get("title", s["url"])} for s in sources]
