@@ -20,7 +20,7 @@ from agents.config import client, GROQ_MODEL, SERPER_API_KEY
 
 
 # ─────────────────────────────────────────────────────────
-# Setup
+# Setupp
 # ─────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
