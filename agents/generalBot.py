@@ -26,6 +26,15 @@ import logging
 import re
 from typing import Optional
 
+# ── keyword sets used by the fast pre-classifier ─────────────────────────────
+_IDEA_WORDS    = {"idea", "ideas"}
+_ACTION_WORDS  = {"make", "create", "build", "start", "generate", "want", "need",
+                  "define", "help", "work", "new", "get", "develop", "explore"}
+_CONFIRM_WORDS = {"yes", "yeah", "yep", "sure", "ok", "okay", "go", "do",
+                  "proceed", "please", "correct", "right", "absolutely", "definitely"}
+_DECLINE_WORDS = {"no", "nope", "nah", "cancel", "stop", "skip", "not", "dont",
+                  "don't", "nevermind", "never", "later", "wait"}
+
 from agents.config import client, GROQ_MODEL
 from agents.utils import parse_llm_json
 from db.connection import SessionLocal
@@ -93,6 +102,36 @@ _SECTION_ORDER = [
 # ─────────────────────────────────────────────────────────────────────────────
 
 _PENDING_RE = re.compile(r"<!--PENDING:([^-]+?)-->")
+
+
+def _quick_classify(message: str, has_pending: bool) -> Optional[dict]:
+    """
+    Keyword-based fast classifier that runs BEFORE the LLM call.
+    Handles unambiguous cases without spending an LLM call.
+    Returns a classification dict or None (meaning: use LLM).
+    """
+    words = set(message.lower().split())
+    clean = message.lower().strip()
+
+    # Idea-related: message contains "idea" + an action word, or is just "idea"
+    if _IDEA_WORDS & words:
+        if (_ACTION_WORDS & words) or len(words) <= 4:
+            return {"intent": "run_section", "section": "idea_intake",
+                    "confidence": 0.95, "reasoning": "keyword: idea + action"}
+
+    # Confirmation — only relevant when there's a pending confirmation waiting
+    if has_pending and (clean in _CONFIRM_WORDS or
+                        any(w in _CONFIRM_WORDS for w in words)):
+        return {"intent": "confirm_action", "section": None,
+                "confidence": 0.95, "reasoning": "confirmation keyword"}
+
+    # Decline
+    if has_pending and (clean in _DECLINE_WORDS or
+                        any(w in _DECLINE_WORDS for w in words)):
+        return {"intent": "decline_action", "section": None,
+                "confidence": 0.95, "reasoning": "decline keyword"}
+
+    return None
 
 
 def _embed_pending(reply: str, sections: list[str]) -> str:
@@ -215,14 +254,23 @@ def _load_section_data(user_id: str, section: Optional[str], db) -> Optional[dic
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _classify_intent(message: str, history: list, snapshot: dict) -> dict:
+    # Fast keyword pass first — avoids an LLM call for common unambiguous cases
+    has_pending = bool(_extract_pending(history))
+    quick = _quick_classify(message, has_pending)
+    if quick:
+        return quick
+
+    # Full LLM classification
     done_sections    = [k for k, v in snapshot["sections"].items() if v["done"]]
     pending_sections = [k for k, v in snapshot["sections"].items() if not v["done"]]
-
+    last_bot = next(
+        (m["content"][:300] for m in reversed(history) if m.get("role") == "assistant"),
+        "none",
+    )
     context = (
         f"Completed sections: {done_sections}\n"
         f"Pending sections: {pending_sections}\n"
-        f"Last assistant message (for confirm/decline detection): "
-        + (history[-1]["content"][:300] if history and history[-1].get("role") == "assistant" else "none")
+        f"Last assistant message (for confirm/decline detection): {last_bot}"
     )
 
     messages = [
@@ -516,20 +564,20 @@ def run_general_bot(user_id: str, message: str, history: list) -> dict:
 
         # ── Step 1: check for a pending confirmation from the previous turn ──────
         pending = _extract_pending(history)
-        if pending:
+        if pending:  # noqa: SIM102
             classification = _classify_intent(message, history, snapshot)
             intent = classification.get("intent", "general_startup_chat")
 
             if intent == "confirm_action":
                 log.info(f"[GeneralBot] confirmed run of {pending} for user={user_id}")
                 results  = _run_sections_in_order(pending, user_id, db)
-                snapshot = _load_pipeline_snapshot(user_id, db)   # refresh
+                snapshot = _load_pipeline_snapshot(user_id, db)
                 reply    = _summarise_results(pending, results, snapshot)
-                return _resp(reply, "confirm_action", pending[-1], "ran_sections")
+                return _resp_and_save(db, user_id, message, reply, "confirm_action", pending[-1], "ran_sections")
 
             if intent == "decline_action":
                 reply = "No problem! Let me know if you want to run something else or have any questions about your startup."
-                return _resp(reply, "decline_action", None, "declined")
+                return _resp_and_save(db, user_id, message, reply, "decline_action", None, "declined")
             # else: treat as a fresh message (pending was stale)
 
         # ── Step 2: classify the fresh message ───────────────────────────────────
@@ -540,53 +588,58 @@ def run_general_bot(user_id: str, message: str, history: list) -> dict:
 
         # ── Out of scope ──────────────────────────────────────────────────────────
         if intent == "out_of_scope":
-            return _resp(OUT_OF_SCOPE_RESPONSE, intent, section, "declined")
+            return _resp_and_save(db, user_id, message, OUT_OF_SCOPE_RESPONSE, intent, section, "declined")
 
         # ── Pipeline status ───────────────────────────────────────────────────────
         if intent == "pipeline_status":
             reply = _respond_from_data(message, history, None, snapshot, None)
-            return _resp(reply, intent, None, "status")
+            return _resp_and_save(db, user_id, message, reply, intent, None, "status")
 
         # ── Idea intake (conversational agent — proxied turn by turn) ─────────────
-        if intent == "run_section" and section == "idea_intake":
-            has_profile = snapshot["sections"].get("profile", {}).get("done", False)
-            if not has_profile:
+        if intent == "run_section" and section in ("idea_intake", "idea"):
+            # Accept if user has completed questionnaire (user_profiles) OR profile analysis ran
+            has_onboarding = (
+                snapshot["sections"].get("profile", {}).get("done", False)
+                or crud.get_user_profile(db, user_id) is not None
+            )
+            if not has_onboarding:
                 reply = (
                     "It looks like you haven't completed your startup profile yet. "
                     "Once that's set up I can help you define and refine your business idea!"
                 )
-                return _resp(reply, intent, section, "answered")
+                return _resp_and_save(db, user_id, message, reply, intent, section, "answered")
 
-            from agents.ThreeIdeaIntakeAgent import run_idea_intake_chat
-            result = run_idea_intake_chat(user_id=user_id, message=message, history=history)
+            from agents.ThreeIdeaIntakeAgent import run_idea_intake
+            result = run_idea_intake(
+                user_id=user_id,
+                user_message=message,
+                history=history,
+            )
             crud.save_idea_intake(db, user_id, result)
             reply = result.get("reply", "Tell me more about your idea.")
-            return _resp(reply, intent, section, "answered")
+            return _resp_and_save(db, user_id, message, reply, intent, section, "answered")
 
         # ── Run an analysis section ───────────────────────────────────────────────
         if intent == "run_section" and section in _RUNNABLE_SECTIONS:
-            # Hard requirement: idea + problems must exist (set by the pipeline)
             if not crud.get_idea(db, user_id) or not crud.get_problems(db, user_id):
                 reply = (
                     "I can't run that analysis yet — your startup idea and problem "
                     "discovery haven't been set up. Have you completed the onboarding?"
                 )
-                return _resp(reply, intent, section, "answered")
+                return _resp_and_save(db, user_id, message, reply, intent, section, "answered")
 
             plan         = _build_run_plan(section, snapshot)
-            missing_plan = plan[:-1]   # everything except the requested section
+            missing_plan = plan[:-1]
 
             if not missing_plan:
-                # No prerequisites needed — just run it
-                label   = _SECTION_LABELS.get(section, section)
-                result  = _run_one_section(section, user_id, db)
+                result   = _run_one_section(section, user_id, db)
                 snapshot = _load_pipeline_snapshot(user_id, db)
-                reply   = _summarise_results([section], {section: result}, snapshot)
-                return _resp(reply, intent, section, "ran_sections")
+                reply    = _summarise_results([section], {section: result}, snapshot)
+                return _resp_and_save(db, user_id, message, reply, intent, section, "ran_sections")
 
-            # Prerequisites are missing — ask for confirmation
-            missing_labels = [_SECTION_LABELS.get(s, s) for s in missing_plan]
-            target_label   = _SECTION_LABELS.get(section, section)
+            # Prerequisites missing — ask for confirmation
+            missing_labels    = [_SECTION_LABELS.get(s, s) for s in missing_plan]
+            target_label      = _SECTION_LABELS.get(section, section)
             confirmation_text = (
                 f"To generate your **{target_label}**, I need to run "
                 f"{len(missing_plan)} other {'analysis' if len(missing_plan) == 1 else 'analyses'} first:\n\n"
@@ -594,34 +647,48 @@ def run_general_bot(user_id: str, message: str, history: list) -> dict:
                 + f"\n\nShall I go ahead and run all {len(plan)} of them? Just say **yes** to confirm."
             )
             reply = _embed_pending(confirmation_text, plan)
-            return _resp(reply, intent, section, "needs_confirmation")
+            return _resp_and_save(db, user_id, message, reply, intent, section, "needs_confirmation")
 
         # ── Refine an existing section ────────────────────────────────────────────
         if intent == "refine_section" and section:
             is_done = snapshot["sections"].get(section, {}).get("done", False)
             label   = _SECTION_LABELS.get(section, section)
             if not is_done:
-                reply = (
-                    f"I haven't generated your **{label}** yet. "
-                    f"Want me to run it now?"
-                )
-                return _resp(reply, "run_section", section, "answered")
+                reply = f"I haven't generated your **{label}** yet. Want me to run it now?"
+                return _resp_and_save(db, user_id, message, reply, "run_section", section, "answered")
 
-            # Load section data and refine via chat
             section_data = _load_section_data(user_id, section, db)
             reply = _respond_from_data(message, history, section, snapshot, section_data)
-            return _resp(reply, intent, section, "answered")
+            return _resp_and_save(db, user_id, message, reply, intent, section, "answered")
 
         # ── Default: chat from data ───────────────────────────────────────────────
         section_data = _load_section_data(user_id, section, db) if section else None
         reply = _respond_from_data(message, history, section, snapshot, section_data)
-        return _resp(reply, intent, section, "answered")
+        return _resp_and_save(db, user_id, message, reply, intent, section, "answered")
 
     except Exception as e:
         log.error(f"[GeneralBot] error for user={user_id}: {e}", exc_info=True)
         raise
     finally:
         db.close()
+
+
+def _resp_and_save(
+    db,
+    user_id: str,
+    user_message: str,
+    reply: str,
+    intent: str,
+    section: Optional[str],
+    action: str,
+) -> dict:
+    """Build the response dict and persist the turn to chat_messages."""
+    try:
+        crud.save_general_bot_messages(db, user_id, user_message, reply)
+    except Exception as e:
+        # Non-fatal: log but don't break the response
+        log.warning(f"[GeneralBot] could not save chat messages for user={user_id}: {e}")
+    return _resp(reply, intent, section, action)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

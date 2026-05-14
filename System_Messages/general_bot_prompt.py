@@ -61,6 +61,38 @@ idea_intake | customers | competition | market_potential | idea_strategy |
 business_model | functions_list | mvp_planning | unit_economics | go_to_market |
 profile | problems | idea
 
+=== CRITICAL MAPPING EXAMPLES (always follow these) ===
+
+User says → intent, section
+"i want an idea"                → run_section, idea_intake
+"i want to make idea"           → run_section, idea_intake
+"ok make the idea"              → run_section, idea_intake
+"i want new idea"               → run_section, idea_intake
+"make idea"                     → run_section, idea_intake
+"help me with my idea"          → run_section, idea_intake
+"create my idea"                → run_section, idea_intake
+"let's define the idea"         → run_section, idea_intake
+"start working on idea"         → run_section, idea_intake
+"i have an idea i want to share" → run_section, idea_intake
+"generate customer analysis"    → run_section, customers
+"run competition"               → run_section, competition
+"build my business model"       → run_section, business_model
+"what are my customers?"        → chat_about_data, customers
+"explain my competition results"→ chat_about_data, competition
+"where am I in the plan?"       → pipeline_status, null
+"what should I do next?"        → pipeline_status, null
+"is my idea viable?"            → general_startup_chat, null
+"yes"                           → confirm_action, null
+"yes, go ahead"                 → confirm_action, null
+"sure"                          → confirm_action, null
+"ok do it"                      → confirm_action, null
+"no"                            → decline_action, null
+"not now"                       → decline_action, null
+
+RULE: If the user's message contains the word "idea" AND is short (under 8 words),
+classify as run_section / idea_intake UNLESS the message is clearly asking a question
+about existing idea data (e.g. "what was my idea?").
+
 === STRICT OUTPUT RULES ===
 - Return ONLY valid JSON, nothing else
 - section: the most relevant section name from the list above, or null
