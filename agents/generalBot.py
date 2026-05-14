@@ -455,6 +455,68 @@ def _run_one_section(section: str, user_id: str, db) -> dict:
     return result
 
 
+def _run_new_user_pipeline_inline(user_id: str, db) -> str:
+    """
+    Run the new-user pipeline synchronously inside the general bot:
+      1. Profile Analysis  (skipped if already done)
+      2. Problem Discovery (skipped if already done)
+      3. Idea Generation   (always runs — that's what the user asked for)
+
+    Saves every result to DB (same as the background orchestrator does).
+    Returns a conversational reply presenting the generated idea.
+    """
+    from agents.PipelineRunner import (
+        run_profile_analysis,
+        run_problem_discovery,
+        generate_opening_idea,
+        build_context,
+    )
+
+    questionnaire = crud.get_questionnaire_from_profile(db, user_id)
+    skills        = crud.get_skills_from_profile(db, user_id)
+
+    # Persist the questionnaire blob so downstream CRUD helpers can find it
+    crud.save_questionnaire_output(db, user_id, questionnaire)
+    crud.upsert_pipeline_status(db, user_id, "running", "profile_analysis")
+
+    # ── Step 1: Profile Analysis (skip if already done) ──────────────────────
+    existing_profile = crud.get_profile(db, user_id)
+    if existing_profile:
+        profile = existing_profile.data
+        log.info(f"[GeneralBot] profile_analysis already done for user={user_id}, skipping")
+    else:
+        log.info(f"[GeneralBot] running profile_analysis for user={user_id}")
+        profile = run_profile_analysis(questionnaire, skills)
+        crud.save_profile(db, user_id, profile)
+
+    # ── Step 2: Problem Discovery (skip if already done) ─────────────────────
+    crud.upsert_pipeline_status(db, user_id, "running", "problem_discovery")
+    existing_problems = crud.get_problems(db, user_id)
+    if existing_problems:
+        problems = existing_problems.data
+        log.info(f"[GeneralBot] problem_discovery already done for user={user_id}, skipping")
+    else:
+        log.info(f"[GeneralBot] running problem_discovery for user={user_id}")
+        problems = run_problem_discovery(profile, questionnaire)
+        crud.save_problems(db, user_id, problems)
+
+    # ── Step 3: Idea Generation (always run — user asked for an idea) ─────────
+    crud.upsert_pipeline_status(db, user_id, "running", "idea_chat")
+    log.info(f"[GeneralBot] generating idea for user={user_id}")
+    context = build_context(problems, questionnaire, skills)
+    idea    = generate_opening_idea(context)
+    crud.save_idea(db, user_id, idea, [])
+    crud.upsert_pipeline_status(db, user_id, "done", None)
+
+    log.info(f"[GeneralBot] pipeline complete — idea saved for user={user_id}")
+
+    return (
+        "Here's a startup idea based on your profile and the problems I discovered:\n\n"
+        + idea
+        + "\n\nWhat do you think? Want to refine it, or shall we start building out the full business plan?"
+    )
+
+
 def _run_sections_in_order(sections: list[str], user_id: str, db) -> dict[str, dict]:
     """Run multiple sections sequentially and return {section: result}."""
     results: dict[str, dict] = {}
@@ -595,14 +657,29 @@ def run_general_bot(user_id: str, message: str, history: list) -> dict:
             reply = _respond_from_data(message, history, None, snapshot, None)
             return _resp_and_save(db, user_id, message, reply, intent, None, "status")
 
-        # ── Idea intake (conversational agent — proxied turn by turn) ─────────────
+        # ── Idea — choose path based on what the user has ────────────────────────
         if intent == "run_section" and section in ("idea_intake", "idea"):
-            # Accept if user has completed questionnaire (user_profiles) OR profile analysis ran
-            has_onboarding = (
-                snapshot["sections"].get("profile", {}).get("done", False)
-                or crud.get_user_profile(db, user_id) is not None
+            user_profile_row = crud.get_user_profile(db, user_id)
+            has_questionnaire = (
+                user_profile_row is not None
+                and user_profile_row.questionnaire_json is not None
             )
-            if not has_onboarding:
+
+            if has_questionnaire:
+                # ── NEW USER PATH: run full pipeline inline ────────────────────
+                # questionnaire_json + skills_json exist → ProfileAnalysis →
+                # ProblemDiscovery → IdeaGeneration, all saved to DB
+                reply = _run_new_user_pipeline_inline(user_id, db)
+                return _resp_and_save(db, user_id, message, reply, intent, "idea", "ran_sections")
+
+            # ── RETURNING USER PATH: proxy through IdeaIntake chat agent ──────
+            # No questionnaire — user already has or is describing a specific idea
+            has_profile_or_intake = (
+                snapshot["sections"].get("profile", {}).get("done", False)
+                or user_profile_row is not None
+                or crud.get_idea_intake(db, user_id) is not None
+            )
+            if not has_profile_or_intake:
                 reply = (
                     "It looks like you haven't completed your startup profile yet. "
                     "Once that's set up I can help you define and refine your business idea!"
