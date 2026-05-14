@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session
 from db.models import (
     UserProfile,
     BusinessModelResult,
+    ChatMessage,
+    ChatSession,
     CompetitionResult,
     CustomersResult,
     FunctionsListResult,
@@ -549,3 +551,59 @@ def get_go_to_market(db: Session, user_id: str) -> Optional[GoToMarketResult]:
 def get_go_to_market_json(db: Session, user_id: str) -> Optional[dict]:
     row = get_go_to_market(db, user_id)
     return row.data if row else None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# General bot chat history  (platform chat_sessions / chat_messages tables)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_or_create_general_bot_session(db: Session, user_id: str) -> ChatSession:
+    """Return the existing general-bot ChatSession for this user, or create one."""
+    session = (
+        db.query(ChatSession)
+        .filter_by(user_id=user_id, session_type="general_bot")
+        .order_by(ChatSession.created_at.desc())
+        .first()
+    )
+    if not session:
+        session = ChatSession(user_id=user_id, session_type="general_bot")
+        db.add(session)
+        _safe_commit(db, session)
+    return session
+
+
+def save_general_bot_messages(
+    db: Session,
+    user_id: str,
+    user_message: str,
+    bot_reply: str,
+) -> None:
+    """Append one user turn + one assistant turn to the general-bot chat session."""
+    session = get_or_create_general_bot_session(db, user_id)
+    db.add(ChatMessage(session_id=session.id, role="user",      content=user_message))
+    db.add(ChatMessage(session_id=session.id, role="assistant", content=bot_reply))
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
+def get_general_bot_history(db: Session, user_id: str, limit: int = 40) -> list:
+    """Return the most recent `limit` messages for the general-bot session."""
+    session = (
+        db.query(ChatSession)
+        .filter_by(user_id=user_id, session_type="general_bot")
+        .order_by(ChatSession.created_at.desc())
+        .first()
+    )
+    if not session:
+        return []
+    rows = (
+        db.query(ChatMessage)
+        .filter_by(session_id=session.id)
+        .order_by(ChatMessage.created_at.asc())
+        .limit(limit)
+        .all()
+    )
+    return [{"role": m.role, "content": m.content} for m in rows]
