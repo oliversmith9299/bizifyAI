@@ -112,9 +112,11 @@ def get_skills_from_profile(db: Session, user_id: str) -> list:
         return []
     skills = row.skills_json
     if isinstance(skills, list):
-        return skills
+        # Backend stores skills as [{"id": ..., "name": ..., "rating": ...}] — extract names
+        return [s["name"] if isinstance(s, dict) else s for s in skills]
     if isinstance(skills, dict):
-        return skills.get("skills", [])
+        items = skills.get("skills", [])
+        return [s["name"] if isinstance(s, dict) else s for s in items]
     return []
 
 

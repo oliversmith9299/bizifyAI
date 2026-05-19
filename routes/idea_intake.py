@@ -23,7 +23,7 @@ def idea_intake(data: IdeaIntakeInput):
 @router.post("/idea-intake/run-problems/{user_id}", dependencies=[Depends(verify_api_key)])
 def idea_intake_run_problems(user_id: str, background_tasks: BackgroundTasks, db=Depends(get_db)):
     intake = crud.get_idea_intake_json(db, user_id)
-    if not intake or intake.get("_status") == "pending_clarification":
+    if not intake or intake.get("decision") == "needs_clarification":
         raise HTTPException(status_code=425, detail="Idea intake not ready. Complete /idea-intake first.")
 
     crud.upsert_pipeline_status(db, user_id, "pending")
@@ -44,7 +44,7 @@ def idea_intake_start_chat(data: UserIdInput, db=Depends(get_db)):
     intake       = crud.get_idea_intake_json(db, data.user_id)
     problems_row = crud.get_problems(db, data.user_id)
 
-    if not intake or intake.get("_status") == "pending_clarification":
+    if not intake or intake.get("decision") == "needs_clarification":
         raise HTTPException(status_code=425, detail="Idea intake is not ready yet.")
     if not problems_row:
         raise HTTPException(status_code=425, detail="Problem discovery is not ready yet.")
