@@ -25,9 +25,25 @@ import json
 import logging
 import time
 
-from agents.utils import gather_sources, parse_llm_json, truncate_sources
+from agents.utils import parse_llm_json
+from agents.search_pipeline import run_search_pipeline, SearchResults
 from agents.schemas import validate_section_output
-from agents.config import client, GROQ_MODEL, SERPER_API_KEY
+from agents.config import client, GROQ_MODEL, SERPER_API_KEY, TAVILY_API_KEY, GROQ_EXTRACTION_MODEL
+
+_SEARCH_DOMAINS = [
+    "saastr.com", "openview.co", "baremetrics.com", "profitwell.com",
+    "techcrunch.com", "a16z.com", "firstround.com", "ycombinator.com",
+]
+
+_EXTRACTION_SCHEMA = {
+    "revenue_model": "how the business makes money (commission, subscription, freemium, etc.)",
+    "pricing_strategy": "pricing approach and specific price points mentioned",
+    "commission_rate": "commission or transaction fee percentage if applicable",
+    "subscription_price": "monthly or annual subscription price if applicable",
+    "gross_margin": "typical gross margin percentage for this business type",
+    "monetisation_timeline": "when companies typically become profitable or reach break-even",
+    "pricing_benchmarks": "industry standard pricing for similar businesses",
+}
 from db.connection import SessionLocal
 from db import crud
 from System_Messages.business_model_prompt import (
@@ -97,8 +113,7 @@ def _build_analysis_context(
     market_potential: dict,
     strategy: dict,
     region: str,
-    sources: list,
-    source_mode: str,
+    search: SearchResults,
 ) -> str:
     parts = [
         "=== SAVED IDEA ===",
@@ -163,14 +178,13 @@ def _build_analysis_context(
         parts.append(f"  [{p.get('id','?')}] {p.get('title','')}")
 
     # Web research — pricing and cost benchmarks
-    if sources:
-        parts += ["", f"=== WEB RESEARCH ({len(sources)} sources — use for real pricing data) ==="]
-        for s in sources:
-            parts.append(f"[{s['url']}]\n{s['content'][:600]}")
+    web_context = search.to_prompt_context()
+    if web_context:
+        parts += ["", web_context]
     else:
         parts += [
             "",
-            f"=== SOURCE MODE: {source_mode} ===",
+            f"=== SOURCE MODE: {search.source_mode} ===",
             "No web sources. Use reasonable estimates — label them clearly as estimates.",
         ]
 
@@ -225,24 +239,24 @@ def run_business_model(
             if region != "Global":
                 break
 
-    # ── 1. Search ────────────────────────────────────────────────────────────
-    sources: list = []
-    source_mode   = "llm_derived"
-
-    if SERPER_API_KEY:
-        queries = _build_search_queries(idea, strategy or {}, competition or {}, region)
-        sources = gather_sources(queries, SERPER_API_KEY, max_sources=10)
-        source_mode = "web_sourced" if sources else "llm_derived"
-    else:
-        log.warning("SERPER_API_KEY not set — using LLM estimates for business model")
+    # ── 1. Search + extract ──────────────────────────────────────────────────
+    search = run_search_pipeline(
+        queries=_build_search_queries(idea, strategy or {}, competition or {}, region),
+        tavily_api_key=TAVILY_API_KEY,
+        extraction_schema=_EXTRACTION_SCHEMA,
+        keywords=[idea.split()[0] if idea else "", region, "pricing", "revenue model", "commission"],
+        include_domains=_SEARCH_DOMAINS,
+        groq_client=client,
+        extraction_model=GROQ_EXTRACTION_MODEL,
+        serper_fallback_key=SERPER_API_KEY,
+    )
 
     # ── 2. Build prompt ──────────────────────────────────────────────────────
-    sources = truncate_sources(sources)
     context = _build_analysis_context(
         idea, problems,
         customers or {}, competition or {},
         market_potential or {}, strategy or {},
-        region, sources, source_mode,
+        region, search,
     )
 
     user_content = context
@@ -250,30 +264,39 @@ def run_business_model(
         user_content += f"\n\n=== ADDITIONAL INSTRUCTION ===\n{custom_prompt}"
 
     # ── 3. LLM call ──────────────────────────────────────────────────────────
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[
-            {"role": "system", "content": BUSINESS_MODEL_PROMPT},
-            {"role": "user",   "content": user_content},
-        ],
-        temperature=0.3,   # lower for consistent numbers
-        max_tokens=4000,
-    )
-
-    raw    = response.choices[0].message.content
-    result = validate_section_output("business_model", parse_llm_json(raw))
-    result["source_mode"]  = source_mode
-    result["sources_used"] = len(sources)
-    result["sources_list"] = [{"url": s["url"], "title": s.get("title", s["url"])} for s in sources]
-
-    # ── 4. Persist ───────────────────────────────────────────────────────────
-    db = SessionLocal()
     try:
-        crud.save_business_model(db, user_id, result)
-    finally:
-        db.close()
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": BUSINESS_MODEL_PROMPT},
+                {"role": "user",   "content": user_content},
+            ],
+            temperature=0.3,   # lower for consistent numbers
+            max_tokens=4000,
+        )
 
-    return result
+        raw = response.choices[0].message.content
+        try:
+            result = validate_section_output("business_model", parse_llm_json(raw))
+        except ValueError as e:
+            log.error("[EightBusinessModel] JSON parse failed: %s", e)
+            raise
+        sources_used, sources_list = search.to_sources_meta()
+        result["source_mode"]  = search.source_mode
+        result["sources_used"] = sources_used
+        result["sources_list"] = sources_list
+
+        # ── 4. Persist ───────────────────────────────────────────────────────────
+        db = SessionLocal()
+        try:
+            crud.save_business_model(db, user_id, result)
+        finally:
+            db.close()
+
+        return result
+    except Exception as e:
+        log.error("[EightBusinessModel] LLM call failed: %s", e)
+        raise
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -288,10 +311,6 @@ def chat_business_model(
     """
     Refine the business model through conversation.
     Scoped to this section only — cannot modify any other pipeline data.
-
-    Returns
-    -------
-    str — assistant reply (may contain a ```json block with updated sections)
     """
     context = (
         "=== CURRENT BUSINESS MODEL ===\n"

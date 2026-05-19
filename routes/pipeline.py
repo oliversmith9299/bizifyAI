@@ -24,7 +24,7 @@ async def run_pipeline(
     questionnaire = crud.get_questionnaire_from_profile(db, data.user_id)
     if not questionnaire:
         raise HTTPException(
-            status_code=425,
+            status_code=409,
             detail="user_profiles row not found or questionnaire_json is empty. "
                    "Complete the onboarding questionnaire first.",
         )
@@ -98,7 +98,7 @@ def get_status(user_id: str, db=Depends(get_db)):
 def get_idea(user_id: str, db=Depends(get_db)):
     idea = crud.get_idea(db, user_id)
     if not idea:
-        raise HTTPException(status_code=425, detail="Idea not ready yet — pipeline still running")
+        raise HTTPException(status_code=409, detail="Idea not ready yet — pipeline still running")
 
     return {
         "user_id":      user_id,
@@ -111,7 +111,7 @@ def get_idea(user_id: str, db=Depends(get_db)):
 def chat(data: ChatInput, db=Depends(get_db)):
     run = crud.get_pipeline_status(db, data.user_id)
     if not run or run.status != "done":
-        raise HTTPException(status_code=425, detail="Pipeline not ready yet. Call /pipeline/run first.")
+        raise HTTPException(status_code=409, detail="Pipeline not ready yet. Call /pipeline/run first.")
 
     idea_row          = crud.get_idea(db, data.user_id)
     profile_row       = crud.get_profile(db, data.user_id)
@@ -119,7 +119,7 @@ def chat(data: ChatInput, db=Depends(get_db)):
     questionnaire_row = crud.get_questionnaire_output(db, data.user_id)
 
     if not (idea_row and profile_row and problems_row and questionnaire_row):
-        raise HTTPException(status_code=425, detail="Missing required context in DB to chat.")
+        raise HTTPException(status_code=409, detail="Missing required context in DB to chat.")
 
     from agents.PipelineRunner import build_context
     stored_questionnaire = questionnaire_row.data
@@ -162,7 +162,7 @@ def chat(data: ChatInput, db=Depends(get_db)):
 def chat_stream(data: ChatInput, db=Depends(get_db)) -> StreamingResponse:
     run = crud.get_pipeline_status(db, data.user_id)
     if not run or run.status != "done":
-        raise HTTPException(status_code=425, detail="Pipeline not ready yet.")
+        raise HTTPException(status_code=409, detail="Pipeline not ready yet.")
 
     idea_row          = crud.get_idea(db, data.user_id)
     profile_row       = crud.get_profile(db, data.user_id)
@@ -170,7 +170,7 @@ def chat_stream(data: ChatInput, db=Depends(get_db)) -> StreamingResponse:
     questionnaire_row = crud.get_questionnaire_output(db, data.user_id)
 
     if not (idea_row and profile_row and problems_row and questionnaire_row):
-        raise HTTPException(status_code=425, detail="Missing required context in DB to chat.")
+        raise HTTPException(status_code=409, detail="Missing required context in DB to chat.")
 
     from agents.PipelineRunner import build_context, groq_client, GROQ_MODEL, IDEA_SYSTEM_PROMPT
 
@@ -221,7 +221,7 @@ def get_questionnaire(user_id: str, db=Depends(get_db)):
 def get_profile(user_id: str, db=Depends(get_db)):
     profile = crud.get_profile(db, user_id)
     if not profile:
-        raise HTTPException(status_code=425, detail="Profile not ready yet")
+        raise HTTPException(status_code=409, detail="Profile not ready yet")
 
     return {"user_id": user_id, "profile_analysis": profile.data}
 
@@ -230,7 +230,7 @@ def get_profile(user_id: str, db=Depends(get_db)):
 def get_problems(user_id: str, db=Depends(get_db)):
     problems = crud.get_problems(db, user_id)
     if not problems:
-        raise HTTPException(status_code=425, detail="Problems not ready yet")
+        raise HTTPException(status_code=409, detail="Problems not ready yet")
 
     return {"user_id": user_id, "problems": problems.data}
 

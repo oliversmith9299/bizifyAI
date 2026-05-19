@@ -26,9 +26,25 @@ import json
 import logging
 import time
 
-from agents.utils import gather_sources, parse_llm_json, truncate_sources
+from agents.utils import parse_llm_json
+from agents.search_pipeline import run_search_pipeline, SearchResults
 from agents.schemas import validate_section_output
-from agents.config import client, GROQ_MODEL, SERPER_API_KEY
+from agents.config import client, GROQ_MODEL, SERPER_API_KEY, TAVILY_API_KEY, GROQ_EXTRACTION_MODEL
+
+_SEARCH_DOMAINS = [
+    "saastr.com", "openview.co", "baremetrics.com", "profitwell.com",
+    "chartmogul.com", "statista.com", "firstround.com",
+]
+
+_EXTRACTION_SCHEMA = {
+    "cac": "customer acquisition cost benchmark in dollars for this industry",
+    "ltv": "customer lifetime value benchmark in dollars",
+    "churn_rate": "monthly or annual churn rate percentage benchmark",
+    "gross_margin": "typical gross margin percentage for this business type",
+    "payback_period": "how many months to recover the customer acquisition cost",
+    "arpu": "average revenue per user or per month benchmark",
+    "ltv_cac_ratio": "healthy LTV to CAC ratio benchmark for this space",
+}
 from db.connection import SessionLocal
 from db import crud
 from System_Messages.unit_economics_prompt import (
@@ -91,8 +107,7 @@ def _build_analysis_context(
     business_model: dict,
     mvp_planning: dict,
     region: str,
-    sources: list,
-    source_mode: str,
+    search: SearchResults,
 ) -> str:
     parts = [
         "=== SAVED IDEA ===",
@@ -180,18 +195,13 @@ def _build_analysis_context(
                     f"— metric: {v.get('success_metric','')}"
                 )
 
-    if sources:
-        parts += [
-            "",
-            f"=== WEB RESEARCH ({len(sources)} sources — USE FOR BENCHMARKS) ===",
-            "Priority: use any CAC, LTV, churn, or AOV benchmarks found below.",
-        ]
-        for s in sources:
-            parts.append(f"[{s['url']}]\n{s['content'][:700]}")
+    web_context = search.to_prompt_context()
+    if web_context:
+        parts += ["", "Priority: use any CAC, LTV, churn, or AOV benchmarks found below.", web_context]
     else:
         parts += [
             "",
-            f"=== SOURCE MODE: {source_mode} ===",
+            f"=== SOURCE MODE: {search.source_mode} ===",
             "No web sources. Use conservative industry estimates. Label all numbers as estimates.",
         ]
 
@@ -245,25 +255,25 @@ def run_unit_economics(
             if region != "Global":
                 break
 
-    # ── 1. Search ────────────────────────────────────────────────────────────
-    sources: list = []
-    source_mode   = "llm_derived"
-
-    if SERPER_API_KEY:
-        queries = _build_search_queries(idea, business_model or {}, region)
-        sources = gather_sources(queries, SERPER_API_KEY, max_sources=12)
-        source_mode = "web_sourced" if sources else "llm_derived"
-    else:
-        log.warning("SERPER_API_KEY not set — unit economics based on LLM estimates only")
+    # ── 1. Search + extract ──────────────────────────────────────────────────
+    search = run_search_pipeline(
+        queries=_build_search_queries(idea, business_model or {}, region),
+        tavily_api_key=TAVILY_API_KEY,
+        extraction_schema=_EXTRACTION_SCHEMA,
+        keywords=[idea.split()[0] if idea else "", region, "CAC", "LTV", "churn", "unit economics"],
+        include_domains=_SEARCH_DOMAINS,
+        groq_client=client,
+        extraction_model=GROQ_EXTRACTION_MODEL,
+        serper_fallback_key=SERPER_API_KEY,
+    )
 
     # ── 2. Build prompt ──────────────────────────────────────────────────────
-    sources = truncate_sources(sources)
     context = _build_analysis_context(
         idea,
         customers or {}, market_potential or {},
         strategy or {}, business_model or {},
         mvp_planning or {},
-        region, sources, source_mode,
+        region, search,
     )
 
     user_content = context
@@ -271,30 +281,39 @@ def run_unit_economics(
         user_content += f"\n\n=== ADDITIONAL INSTRUCTION ===\n{custom_prompt}"
 
     # ── 3. LLM call ──────────────────────────────────────────────────────────
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[
-            {"role": "system", "content": UNIT_ECONOMICS_PROMPT},
-            {"role": "user",   "content": user_content},
-        ],
-        temperature=0.2,   # very low — financial numbers must be consistent
-        max_tokens=4000,
-    )
-
-    raw    = response.choices[0].message.content
-    result = validate_section_output("unit_economics", parse_llm_json(raw))
-    result["source_mode"]  = source_mode
-    result["sources_used"] = len(sources)
-    result["sources_list"] = [{"url": s["url"], "title": s.get("title", s["url"])} for s in sources]
-
-    # ── 4. Persist ───────────────────────────────────────────────────────────
-    db = SessionLocal()
     try:
-        crud.save_unit_economics(db, user_id, result)
-    finally:
-        db.close()
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": UNIT_ECONOMICS_PROMPT},
+                {"role": "user",   "content": user_content},
+            ],
+            temperature=0.2,   # very low — financial numbers must be consistent
+            max_tokens=4000,
+        )
 
-    return result
+        raw = response.choices[0].message.content
+        try:
+            result = validate_section_output("unit_economics", parse_llm_json(raw))
+        except ValueError as e:
+            log.error("[ElevenUnitEconomics] JSON parse failed: %s", e)
+            raise
+        sources_used, sources_list = search.to_sources_meta()
+        result["source_mode"]  = search.source_mode
+        result["sources_used"] = sources_used
+        result["sources_list"] = sources_list
+
+        # ── 4. Persist ───────────────────────────────────────────────────────────
+        db = SessionLocal()
+        try:
+            crud.save_unit_economics(db, user_id, result)
+        finally:
+            db.close()
+
+        return result
+    except Exception as e:
+        log.error("[ElevenUnitEconomics] LLM call failed: %s", e)
+        raise
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -309,10 +328,6 @@ def chat_unit_economics(
     """
     Refine unit economics through conversation.
     Scoped to this section only — cannot modify any other pipeline data.
-
-    Returns
-    -------
-    str — assistant reply (may contain a ```json block with updated sections)
     """
     context = (
         "=== CURRENT UNIT ECONOMICS ===\n"

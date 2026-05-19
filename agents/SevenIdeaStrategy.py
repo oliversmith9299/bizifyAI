@@ -27,9 +27,24 @@ import json
 import logging
 import time
 
-from agents.utils import gather_sources, parse_llm_json, truncate_sources
+from agents.utils import parse_llm_json
+from agents.search_pipeline import run_search_pipeline, SearchResults
 from agents.schemas import validate_section_output
-from agents.config import client, GROQ_MODEL, SERPER_API_KEY
+from agents.config import client, GROQ_MODEL, SERPER_API_KEY, TAVILY_API_KEY, GROQ_EXTRACTION_MODEL
+
+_SEARCH_DOMAINS = [
+    "techcrunch.com", "a16z.com", "ycombinator.com", "indiehackers.com",
+    "firstround.com", "openview.co", "hbr.org", "stratechery.com",
+]
+
+_EXTRACTION_SCHEMA = {
+    "positioning": "how successful companies position themselves in this market",
+    "differentiation": "what makes successful startups different from competitors",
+    "validation_methods": "how founders validated their ideas before building",
+    "success_factors": "key factors that led to startup success in this space",
+    "failure_reasons": "why similar startups failed or pivoted",
+    "unfair_advantages": "unique advantages or moats described",
+}
 from db.connection import SessionLocal
 from db import crud
 from System_Messages.idea_strategy_prompt import (
@@ -102,8 +117,7 @@ def _build_analysis_context(
     competition: dict,
     market_potential: dict,
     region: str,
-    sources: list,
-    source_mode: str,
+    search: SearchResults,
 ) -> str:
     parts = [
         "=== SAVED IDEA ===",
@@ -162,14 +176,13 @@ def _build_analysis_context(
         if timing:
             parts.append(f"  Timing: {'✅ Right time' if timing.get('is_right_time') else '⚠️ Questionable timing'} — {timing.get('reasoning','')}")
 
-    if sources:
-        parts += ["", f"=== WEB RESEARCH ({len(sources)} sources — use for positioning benchmarks) ==="]
-        for s in sources:
-            parts.append(f"[{s['url']}]\n{s['content'][:600]}")
+    web_context = search.to_prompt_context()
+    if web_context:
+        parts += ["", web_context]
     else:
         parts += [
             "",
-            f"=== SOURCE MODE: {source_mode} ===",
+            f"=== SOURCE MODE: {search.source_mode} ===",
             "No web sources. Base strategy on the research data above.",
         ]
 
@@ -220,23 +233,23 @@ def run_idea_strategy(
             if region != "Global":
                 break
 
-    # ── 1. Search ────────────────────────────────────────────────────────────
-    sources = []
-    source_mode = "synthesis_only"
-
-    if SERPER_API_KEY:
-        queries = _build_search_queries(idea, problems, competition or {}, region)
-        sources = gather_sources(queries, SERPER_API_KEY, max_sources=10)
-        source_mode = "web_enriched" if sources else "synthesis_only"
-    else:
-        log.warning("SERPER_API_KEY not set — using synthesis only")
+    # ── 1. Search + extract ──────────────────────────────────────────────────
+    search = run_search_pipeline(
+        queries=_build_search_queries(idea, problems, competition or {}, region),
+        tavily_api_key=TAVILY_API_KEY,
+        extraction_schema=_EXTRACTION_SCHEMA,
+        keywords=[idea.split()[0] if idea else "", region, "positioning", "differentiation", "strategy"],
+        include_domains=_SEARCH_DOMAINS,
+        groq_client=client,
+        extraction_model=GROQ_EXTRACTION_MODEL,
+        serper_fallback_key=SERPER_API_KEY,
+    )
 
     # ── 2. Build prompt ──────────────────────────────────────────────────────
-    sources = truncate_sources(sources)
     context = _build_analysis_context(
         idea, problems,
         customers or {}, competition or {}, market_potential or {},
-        region, sources, source_mode,
+        region, search,
     )
 
     user_content = context
@@ -244,21 +257,30 @@ def run_idea_strategy(
         user_content += f"\n\n=== ADDITIONAL INSTRUCTION ===\n{custom_prompt}"
 
     # ── 3. LLM call ──────────────────────────────────────────────────────────
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[
-            {"role": "system", "content": IDEA_STRATEGY_PROMPT},
-            {"role": "user",   "content": user_content},
-        ],
-        temperature=0.4,
-        max_tokens=4000,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": IDEA_STRATEGY_PROMPT},
+                {"role": "user",   "content": user_content},
+            ],
+            temperature=0.4,
+            max_tokens=4000,
+        )
+    except Exception as e:
+        log.error("[SevenIdeaStrategy] LLM call failed: %s", e)
+        raise
 
-    raw    = response.choices[0].message.content
-    result = validate_section_output("idea_strategy", parse_llm_json(raw))
-    result["source_mode"]  = source_mode
-    result["sources_used"] = len(sources)
-    result["sources_list"] = [{"url": s["url"], "title": s.get("title", s["url"])} for s in sources]
+    raw = response.choices[0].message.content
+    try:
+        result = validate_section_output("idea_strategy", parse_llm_json(raw))
+    except ValueError as e:
+        log.error("[SevenIdeaStrategy] JSON parse failed: %s", e)
+        raise
+    sources_used, sources_list = search.to_sources_meta()
+    result["source_mode"]  = search.source_mode
+    result["sources_used"] = sources_used
+    result["sources_list"] = sources_list
 
     # ── 4. Persist ───────────────────────────────────────────────────────────
     db = SessionLocal()

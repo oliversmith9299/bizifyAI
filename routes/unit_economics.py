@@ -20,9 +20,9 @@ def _load_deps(user_id: str, db: Any) -> tuple:
     idea_row     = crud.get_idea(db, user_id)
     problems_row = crud.get_problems(db, user_id)
     if not idea_row:
-        raise HTTPException(status_code=425, detail="Idea not ready. Complete the pipeline first.")
+        raise HTTPException(status_code=409, detail="Idea not ready. Complete the pipeline first.")
     if not problems_row:
-        raise HTTPException(status_code=425, detail="Problems not ready. Complete the pipeline first.")
+        raise HTTPException(status_code=409, detail="Problems not ready. Complete the pipeline first.")
     return (
         idea_row,
         crud.get_customers(db, user_id),
@@ -77,7 +77,7 @@ def regenerate_unit_economics_custom(data: RegenerateCustomInput, db=Depends(get
 def chat_unit_economics(data: SectionChatInput, db=Depends(get_db)):
     ue_row = crud.get_unit_economics(db, data.user_id)
     if not ue_row:
-        raise HTTPException(status_code=425, detail="Unit economics not generated yet. Call POST /unit-economics/{user_id} first.")
+        raise HTTPException(status_code=409, detail="Unit economics not generated yet. Call POST /unit-economics/{user_id} first.")
 
     from agents.ElevenUnitEconomicsAgent import chat_unit_economics as _chat
     reply = _chat(current_analysis=ue_row.data, user_message=data.message, history=data.history)
@@ -95,7 +95,7 @@ def chat_unit_economics(data: SectionChatInput, db=Depends(get_db)):
 def chat_unit_economics_stream(data: SectionChatInput, db=Depends(get_db)) -> StreamingResponse:
     ue_row = crud.get_unit_economics(db, data.user_id)
     if not ue_row:
-        raise HTTPException(status_code=425, detail="Unit economics not generated yet.")
+        raise HTTPException(status_code=409, detail="Unit economics not generated yet.")
 
     from agents.PipelineRunner import groq_client, GROQ_MODEL
     from System_Messages.unit_economics_prompt import UNIT_ECONOMICS_CHAT_PROMPT

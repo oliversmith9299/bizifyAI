@@ -113,8 +113,13 @@ async def run_returning_user_pipeline(user_id: str, intake_data: dict):
     session = make_session(user_id, has_idea=True)
     session.advance()   # IDEA_INTAKE is already done — skip to PROBLEM_DISCOVERY
 
+    # Load the user's real questionnaire so problem discovery uses their actual
+    # founder_setup, risk_tolerance, and career_profile — not hardcoded defaults.
+    with get_session() as _db:
+        real_questionnaire = crud.get_questionnaire_from_profile(_db, user_id) or {}
+
     profile_compat       = _build_profile_for_problem_discovery(intake_data)
-    questionnaire_compat = _build_questionnaire_for_problem_discovery(intake_data)
+    questionnaire_compat = _build_questionnaire_for_problem_discovery(intake_data, real_questionnaire)
 
     try:
         # ── Step · Problem Discovery ─────────────────────────────────────────
@@ -156,5 +161,5 @@ def _status(db, user_id: str, step):
     try:
         with get_session() as s:
             crud.upsert_pipeline_status(s, user_id, "running", step.current_step.value)
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("[%s] Failed to update pipeline status: %s", user_id, e)

@@ -20,9 +20,9 @@ def _load_deps(user_id: str, db: Any) -> tuple:
     idea_row     = crud.get_idea(db, user_id)
     problems_row = crud.get_problems(db, user_id)
     if not idea_row:
-        raise HTTPException(status_code=425, detail="Idea not ready. Complete the pipeline first.")
+        raise HTTPException(status_code=409, detail="Idea not ready. Complete the pipeline first.")
     if not problems_row:
-        raise HTTPException(status_code=425, detail="Problems not ready. Complete the pipeline first.")
+        raise HTTPException(status_code=409, detail="Problems not ready. Complete the pipeline first.")
     return (
         idea_row, problems_row,
         crud.get_customers(db, user_id),
@@ -79,7 +79,7 @@ def regenerate_mvp_planning_custom(data: RegenerateCustomInput, db=Depends(get_d
 def chat_mvp_planning(data: SectionChatInput, db=Depends(get_db)):
     mvp_row = crud.get_mvp_planning(db, data.user_id)
     if not mvp_row:
-        raise HTTPException(status_code=425, detail="MVP plan not generated yet. Call POST /mvp-planning/{user_id} first.")
+        raise HTTPException(status_code=409, detail="MVP plan not generated yet. Call POST /mvp-planning/{user_id} first.")
 
     from agents.TenMVPPlanning import chat_mvp_planning as _chat
     reply = _chat(current_analysis=mvp_row.data, user_message=data.message, history=data.history)
@@ -97,7 +97,7 @@ def chat_mvp_planning(data: SectionChatInput, db=Depends(get_db)):
 def chat_mvp_planning_stream(data: SectionChatInput, db=Depends(get_db)) -> StreamingResponse:
     mvp_row = crud.get_mvp_planning(db, data.user_id)
     if not mvp_row:
-        raise HTTPException(status_code=425, detail="MVP plan not generated yet.")
+        raise HTTPException(status_code=409, detail="MVP plan not generated yet.")
 
     from agents.PipelineRunner import groq_client, GROQ_MODEL
     from System_Messages.mvp_planning_prompt import MVP_PLANNING_CHAT_PROMPT

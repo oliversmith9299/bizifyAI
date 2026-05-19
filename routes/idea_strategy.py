@@ -22,9 +22,9 @@ def generate_idea_strategy(user_id: str, db=Depends(get_db)):
     problems_row = crud.get_problems(db, user_id)
 
     if not idea_row:
-        raise HTTPException(status_code=425, detail="Idea not ready. Complete the pipeline first.")
+        raise HTTPException(status_code=409, detail="Idea not ready. Complete the pipeline first.")
     if not problems_row:
-        raise HTTPException(status_code=425, detail="Problems not ready. Complete the pipeline first.")
+        raise HTTPException(status_code=409, detail="Problems not ready. Complete the pipeline first.")
 
     customers_row   = crud.get_customers(db, user_id)
     competition_row = crud.get_competition(db, user_id)
@@ -53,7 +53,7 @@ def regenerate_idea_strategy_custom(data: RegenerateCustomInput, db=Depends(get_
     problems_row = crud.get_problems(db, data.user_id)
 
     if not idea_row or not problems_row:
-        raise HTTPException(status_code=425, detail="Idea or problems not ready.")
+        raise HTTPException(status_code=409, detail="Idea or problems not ready.")
 
     customers_row   = crud.get_customers(db, data.user_id)
     competition_row = crud.get_competition(db, data.user_id)
@@ -76,7 +76,7 @@ def regenerate_idea_strategy_custom(data: RegenerateCustomInput, db=Depends(get_
 def chat_idea_strategy(data: SectionChatInput, db=Depends(get_db)):
     strategy_row = crud.get_idea_strategy(db, data.user_id)
     if not strategy_row:
-        raise HTTPException(status_code=425, detail="Idea strategy not generated yet. Call POST /idea-strategy/{user_id} first.")
+        raise HTTPException(status_code=409, detail="Idea strategy not generated yet. Call POST /idea-strategy/{user_id} first.")
 
     from agents.SevenIdeaStrategy import chat_idea_strategy as _chat
     reply = _chat(current_analysis=strategy_row.data, user_message=data.message, history=data.history)
@@ -94,7 +94,7 @@ def chat_idea_strategy(data: SectionChatInput, db=Depends(get_db)):
 def chat_idea_strategy_stream(data: SectionChatInput, db=Depends(get_db)) -> StreamingResponse:
     strategy_row = crud.get_idea_strategy(db, data.user_id)
     if not strategy_row:
-        raise HTTPException(status_code=425, detail="Idea strategy not generated yet.")
+        raise HTTPException(status_code=409, detail="Idea strategy not generated yet.")
 
     from agents.PipelineRunner import groq_client, GROQ_MODEL
     from System_Messages.idea_strategy_prompt import IDEA_STRATEGY_CHAT_PROMPT

@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import Header, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -35,48 +35,57 @@ def verify_api_key(x_api_key: str = Header(...)) -> None:
 
 
 # ── Request models ────────────────────────────────────────────────────────────
+# All user-supplied strings are bounded to prevent DoS via oversized payloads.
+# history is capped at 100 turns (~50 exchanges) — enough for any real session.
+
+_USER_ID   = Field(..., min_length=1,  max_length=64)
+_MESSAGE   = Field(..., min_length=1,  max_length=10_000)
+_PROMPT    = Field(..., min_length=1,  max_length=5_000)
+_SECTION   = Field(None,               max_length=64)
+_HISTORY   = Field(default_factory=list, max_length=100)
+
 
 class QuestionnaireInput(BaseModel):
-    user_id: str
+    user_id: str = _USER_ID
 
 
 class ChatInput(BaseModel):
-    user_id: str
-    message: str
+    user_id: str = _USER_ID
+    message: str = _MESSAGE
 
 
 class SectionChatInput(BaseModel):
-    user_id:  str
-    message:  str
-    history:  List[Dict[str, Any]] = []
+    user_id: str            = _USER_ID
+    message: str            = _MESSAGE
+    history: List[Dict[str, Any]] = _HISTORY
 
 
 class RegenerateCustomInput(BaseModel):
-    user_id:       str
-    custom_prompt: str
+    user_id:       str = _USER_ID
+    custom_prompt: str = _PROMPT
 
 
 class IdeaIntakeInput(BaseModel):
-    user_id:  str
-    message:  str
-    history:  List[Dict[str, Any]] = []
+    user_id: str            = _USER_ID
+    message: str            = _MESSAGE
+    history: List[Dict[str, Any]] = _HISTORY
 
 
 class UserIdInput(BaseModel):
-    user_id: str
+    user_id: str = _USER_ID
 
 
 class GeneralBotInput(BaseModel):
-    user_id:  str
-    message:  str
-    history:  List[Dict[str, Any]] = []
+    user_id: str            = _USER_ID
+    message: str            = _MESSAGE
+    history: List[Dict[str, Any]] = _HISTORY
 
 
 class ExplainerInput(BaseModel):
-    user_id:  str
-    message:  str
-    history:  List[Dict[str, Any]] = []
-    section:  Optional[str] = None   # e.g. "customers", "business_model"
+    user_id: str            = _USER_ID
+    message: str            = _MESSAGE
+    history: List[Dict[str, Any]] = _HISTORY
+    section: Optional[str]  = _SECTION
 
 
 # ── SSE streaming helper ──────────────────────────────────────────────────────
@@ -132,5 +141,4 @@ def sse_chat_stream(
             "X-Accel-Buffering": "no",
         },
     )
-
 

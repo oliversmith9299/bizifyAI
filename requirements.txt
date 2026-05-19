@@ -7,3 +7,4 @@ beautifulsoup4
 pydantic
 SQLAlchemy
 psycopg2-binary
+tavily-python
