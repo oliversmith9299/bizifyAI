@@ -143,6 +143,7 @@ def chat(data: ChatInput, db=Depends(get_db)):
         model=GROQ_MODEL, messages=messages, temperature=0.4, max_tokens=1000,
     )
     reply = response.choices[0].message.content.strip()
+    tokens_used = response.usage.total_tokens if response.usage else 0
 
     new_idea = reply if "💡 IDEA:" in reply else idea_row.current_idea
     existing_history.append({"role": "user",      "content": data.message})
@@ -153,6 +154,7 @@ def chat(data: ChatInput, db=Depends(get_db)):
         "user_id":             data.user_id,
         "reply":               reply,
         "chat_history_length": len(existing_history),
+        "tokens_used":         tokens_used,
     }
 
 

@@ -34,3 +34,11 @@ SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 
 # ── Security ──────────────────────────────────────────────────────────────────
 API_SECRET_KEY = os.getenv("API_SECRET_KEY")
+
+# ── CORS ──────────────────────────────────────────────────────────────────────
+# Comma-separated list of origins allowed to call the AI service.
+# In production this should be set to the backend's origin only, e.g.:
+#   ALLOWED_ORIGINS=https://api.bizify.com
+# Defaults to empty (blocks all browser-direct calls) when not set.
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "")
+ALLOWED_ORIGINS: list[str] = [o.strip() for o in _raw_origins.split(",") if o.strip()]

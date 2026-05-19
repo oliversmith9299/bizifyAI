@@ -107,18 +107,22 @@ def sse_chat_stream(
             temperature=temperature,
             max_tokens=max_tokens,
             stream=True,
+            stream_options={"include_usage": True},
         )
 
         tokens: list[str] = []
+        total_tokens = 0
         for chunk in stream:
-            delta: str = chunk.choices[0].delta.content or ""
-            if delta:
+            if chunk.usage:
+                total_tokens = chunk.usage.total_tokens or 0
+            if chunk.choices and chunk.choices[0].delta.content:
+                delta = chunk.choices[0].delta.content
                 tokens.append(delta)
                 yield f"data: {json.dumps({'type': 'token', 'content': delta})}\n\n"
 
         full_reply = "".join(tokens)
         metadata   = on_complete(full_reply)
-        yield f"data: {json.dumps({'type': 'done', **metadata})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'tokens_used': total_tokens, **metadata})}\n\n"
 
     return StreamingResponse(
         _generator(),

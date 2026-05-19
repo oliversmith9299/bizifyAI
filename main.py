@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from agents.config import ALLOWED_ORIGINS
 from db.connection import engine
 from db import crud
 from db.models import (
@@ -31,13 +32,15 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS — only the backend server should call this service in production.
-# In development, allow localhost ports for testing.
+# CORS — the AI service must only be called by the backend, never by browsers.
+# Set ALLOWED_ORIGINS=https://your-backend-host in .env for production.
+# When ALLOWED_ORIGINS is empty (default), no browser origin is allowed.
+_cors_origins = ALLOWED_ORIGINS if ALLOWED_ORIGINS else []
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # tighten to backend URL in production
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_cors_origins,
+    allow_methods=["POST", "GET"],
+    allow_headers=["x-api-key", "Content-Type"],
 )
 
 app.include_router(pipeline_router)
