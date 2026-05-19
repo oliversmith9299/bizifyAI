@@ -26,9 +26,24 @@ import json
 import logging
 import time
 
-from agents.utils import gather_sources, parse_llm_json, truncate_sources
+from agents.utils import parse_llm_json
+from agents.search_pipeline import run_search_pipeline, SearchResults
 from agents.schemas import validate_section_output
-from agents.config import client, GROQ_MODEL, SERPER_API_KEY
+from agents.config import client, GROQ_MODEL, SERPER_API_KEY, TAVILY_API_KEY, GROQ_EXTRACTION_MODEL
+
+_SEARCH_DOMAINS = [
+    "indiehackers.com", "producthunt.com", "ycombinator.com",
+    "firstround.com", "betalist.com", "startupschool.org",
+]
+
+_EXTRACTION_SCHEMA = {
+    "launch_timeline": "typical time to build and launch a similar MVP (weeks or months)",
+    "no_code_tools": "no-code or low-code tools used to build similar MVPs quickly",
+    "first_customers": "how founders got their first 10 to 100 customers",
+    "validation_approach": "how founders validated demand before building the full product",
+    "pivot_stories": "common pivots or direction changes made after initial launch",
+    "launch_channels": "platforms or communities used for the initial launch",
+}
 from db.connection import SessionLocal
 from db import crud
 from System_Messages.mvp_planning_prompt import (
@@ -91,8 +106,7 @@ def _build_analysis_context(
     business_model: dict,
     functions_list: dict,
     region: str,
-    sources: list,
-    source_mode: str,
+    search: SearchResults,
 ) -> str:
     parts = [
         "=== SAVED IDEA ===",
@@ -189,14 +203,13 @@ def _build_analysis_context(
     for p in problems.get("problems", [])[:3]:
         parts.append(f"  [{p.get('id','?')}] {p.get('title','')}")
 
-    if sources:
-        parts += ["", f"=== WEB RESEARCH ({len(sources)} sources — MVP launches + validation tactics) ==="]
-        for s in sources:
-            parts.append(f"[{s['url']}]\n{s['content'][:600]}")
+    web_context = search.to_prompt_context()
+    if web_context:
+        parts += ["", web_context]
     else:
         parts += [
             "",
-            f"=== SOURCE MODE: {source_mode} ===",
+            f"=== SOURCE MODE: {search.source_mode} ===",
             "No web sources. Base MVP plan on strategy assumptions and functions list above.",
         ]
 
@@ -252,26 +265,24 @@ def run_mvp_planning(
             if region != "Global":
                 break
 
-    # ── 1. Search ────────────────────────────────────────────────────────────
-    sources: list = []
-    source_mode   = "synthesis_only"
-
-    if SERPER_API_KEY:
-        queries = _build_search_queries(
-            idea, business_model or {}, functions_list or {}, region
-        )
-        sources = gather_sources(queries, SERPER_API_KEY, max_sources=10)
-        source_mode = "web_sourced" if sources else "synthesis_only"
-    else:
-        log.warning("SERPER_API_KEY not set — building MVP plan from pipeline data only")
+    # ── 1. Search + extract ──────────────────────────────────────────────────
+    search = run_search_pipeline(
+        queries=_build_search_queries(idea, business_model or {}, functions_list or {}, region),
+        tavily_api_key=TAVILY_API_KEY,
+        extraction_schema=_EXTRACTION_SCHEMA,
+        keywords=[idea.split()[0] if idea else "", region, "MVP", "launch", "first customers"],
+        include_domains=_SEARCH_DOMAINS,
+        groq_client=client,
+        extraction_model=GROQ_EXTRACTION_MODEL,
+        serper_fallback_key=SERPER_API_KEY,
+    )
 
     # ── 2. Build prompt ──────────────────────────────────────────────────────
-    sources = truncate_sources(sources)
     context = _build_analysis_context(
         idea, problems,
         customers or {}, strategy or {},
         business_model or {}, functions_list or {},
-        region, sources, source_mode,
+        region, search,
     )
 
     user_content = context
@@ -279,21 +290,30 @@ def run_mvp_planning(
         user_content += f"\n\n=== ADDITIONAL INSTRUCTION ===\n{custom_prompt}"
 
     # ── 3. LLM call ──────────────────────────────────────────────────────────
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[
-            {"role": "system", "content": MVP_PLANNING_PROMPT},
-            {"role": "user",   "content": user_content},
-        ],
-        temperature=0.3,
-        max_tokens=4000,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": MVP_PLANNING_PROMPT},
+                {"role": "user",   "content": user_content},
+            ],
+            temperature=0.3,
+            max_tokens=4000,
+        )
+    except Exception as e:
+        log.error("[TenMVPPlanning] LLM call failed: %s", e)
+        raise
 
-    raw    = response.choices[0].message.content
-    result = validate_section_output("mvp_planning", parse_llm_json(raw))
-    result["source_mode"]  = source_mode
-    result["sources_used"] = len(sources)
-    result["sources_list"] = [{"url": s["url"], "title": s.get("title", s["url"])} for s in sources]
+    raw = response.choices[0].message.content
+    try:
+        result = validate_section_output("mvp_planning", parse_llm_json(raw))
+    except ValueError as e:
+        log.error("[TenMVPPlanning] JSON parse failed: %s", e)
+        raise
+    sources_used, sources_list = search.to_sources_meta()
+    result["source_mode"]  = search.source_mode
+    result["sources_used"] = sources_used
+    result["sources_list"] = sources_list
 
     # ── 4. Persist ───────────────────────────────────────────────────────────
     db = SessionLocal()

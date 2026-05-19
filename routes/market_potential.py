@@ -22,9 +22,9 @@ def generate_market_potential(user_id: str, db=Depends(get_db)):
     problems_row = crud.get_problems(db, user_id)
 
     if not idea_row:
-        raise HTTPException(status_code=425, detail="Idea not ready. Complete the pipeline first.")
+        raise HTTPException(status_code=409, detail="Idea not ready. Complete the pipeline first.")
     if not problems_row:
-        raise HTTPException(status_code=425, detail="Problems not ready. Complete the pipeline first.")
+        raise HTTPException(status_code=409, detail="Problems not ready. Complete the pipeline first.")
 
     customers_row   = crud.get_customers(db, user_id)
     competition_row = crud.get_competition(db, user_id)
@@ -51,7 +51,7 @@ def regenerate_market_potential_custom(data: RegenerateCustomInput, db=Depends(g
     problems_row = crud.get_problems(db, data.user_id)
 
     if not idea_row or not problems_row:
-        raise HTTPException(status_code=425, detail="Idea or problems not ready.")
+        raise HTTPException(status_code=409, detail="Idea or problems not ready.")
 
     customers_row   = crud.get_customers(db, data.user_id)
     competition_row = crud.get_competition(db, data.user_id)
@@ -72,7 +72,7 @@ def regenerate_market_potential_custom(data: RegenerateCustomInput, db=Depends(g
 def chat_market_potential(data: SectionChatInput, db=Depends(get_db)):
     mp_row = crud.get_market_potential(db, data.user_id)
     if not mp_row:
-        raise HTTPException(status_code=425, detail="Market potential not generated yet. Call POST /market-potential/{user_id} first.")
+        raise HTTPException(status_code=409, detail="Market potential not generated yet. Call POST /market-potential/{user_id} first.")
 
     from agents.SixMaketPotential import chat_market_potential as _chat
     reply = _chat(current_analysis=mp_row.data, user_message=data.message, history=data.history)
@@ -90,7 +90,7 @@ def chat_market_potential(data: SectionChatInput, db=Depends(get_db)):
 def chat_market_potential_stream(data: SectionChatInput, db=Depends(get_db)) -> StreamingResponse:
     mp_row = crud.get_market_potential(db, data.user_id)
     if not mp_row:
-        raise HTTPException(status_code=425, detail="Market potential not generated yet.")
+        raise HTTPException(status_code=409, detail="Market potential not generated yet.")
 
     from agents.PipelineRunner import groq_client, GROQ_MODEL
     from System_Messages.market_potential_prompt import MARKET_POTENTIAL_CHAT_PROMPT

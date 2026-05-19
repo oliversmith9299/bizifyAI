@@ -7,11 +7,15 @@
 # Multi-turn: if the idea is too vague, the agent asks 2-3 short clarification
 # questions and waits for answers before producing the structured output.
 
+import logging
+
 from db.connection import SessionLocal
 from db import crud
 from agents.utils import parse_llm_json
 from agents.config import client, GROQ_MODEL
 from System_Messages.idea_intake_prompt import IDEA_INTAKE_PROMPT as _SYSTEM_PROMPT
+
+log = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # System prompt
@@ -31,18 +35,26 @@ def _build_profile_for_problem_discovery(intake: dict) -> dict:
     }
 
 
-def _build_questionnaire_for_problem_discovery(intake: dict) -> dict:
-    """Map IdeaIntake → the questionnaire shape that run_problem_discovery expects."""
+def _build_questionnaire_for_problem_discovery(intake: dict, real_questionnaire: dict = None) -> dict:
+    """
+    Map IdeaIntake → the questionnaire shape that run_problem_discovery expects.
+
+    Merges the returning user's actual profile values (founder_setup, risk_tolerance,
+    experience_level, career_profile) so problem discovery is personalised to who
+    they really are — not defaulted to "solo / medium / intermediate".
+    """
+    rq = real_questionnaire or {}
+    up = rq.get("user_profile", {})
     return {
         "user_profile": {
-            "target_region":      intake.get("region", "Global"),
+            "target_region":      intake.get("region") or up.get("target_region", "Global"),
             "business_interests": [intake.get("business_model", "")],
-            "curiosity_domain":   intake.get("industry", ""),
-            "founder_setup":      "solo",
-            "risk_tolerance":     "medium",
-            "experience_level":   "intermediate",
+            "curiosity_domain":   intake.get("industry") or up.get("curiosity_domain", ""),
+            "founder_setup":      up.get("founder_setup", "solo"),
+            "risk_tolerance":     up.get("risk_tolerance", "medium"),
+            "experience_level":   up.get("experience_level", "intermediate"),
         },
-        "career_profile": {},
+        "career_profile": rq.get("career_profile", {}),
     }
 
 
@@ -76,6 +88,10 @@ def run_idea_intake(user_id: str, user_message: str, history: list = None) -> di
 
     db = SessionLocal()
     try:
+        # Load the user's real questionnaire so problem discovery uses their
+        # actual founder_setup, risk_tolerance, and career_profile — not defaults.
+        real_questionnaire = crud.get_questionnaire_from_profile(db, user_id) or {}
+
         messages = [{"role": "system", "content": _SYSTEM_PROMPT}]
         messages.extend(history)
         messages.append({"role": "user", "content": user_message})
@@ -86,8 +102,13 @@ def run_idea_intake(user_id: str, user_message: str, history: list = None) -> di
             temperature=0.3,
         )
 
-        raw    = response.choices[0].message.content
-        result = parse_llm_json(raw)
+        raw = response.choices[0].message.content
+
+        try:
+            result = parse_llm_json(raw)
+        except ValueError as parse_err:
+            log.error("[IdeaIntakeAgent] Failed to parse LLM response: %s\nRaw: %s", parse_err, raw[:300])
+            raise
 
         updated_history = history + [
             {"role": "user",      "content": user_message},
@@ -97,10 +118,11 @@ def run_idea_intake(user_id: str, user_message: str, history: list = None) -> di
         if result.get("decision") == "ready":
             intake               = result["intake"]
             profile_compat       = _build_profile_for_problem_discovery(intake)
-            questionnaire_compat = _build_questionnaire_for_problem_discovery(intake)
+            # Pass real_questionnaire so returning users get personalised problem research
+            questionnaire_compat = _build_questionnaire_for_problem_discovery(intake, real_questionnaire)
 
             crud.save_idea_intake(db, user_id, intake)
-            print(f"[IdeaIntakeAgent] Intake saved for user {user_id}")
+            log.info("[IdeaIntakeAgent] Intake saved for user %s", user_id)
 
             return {
                 "status": "ready",
@@ -126,7 +148,7 @@ def run_idea_intake(user_id: str, user_message: str, history: list = None) -> di
             }
 
     except Exception as e:
-        print(f"[IdeaIntakeAgent] Error: {e}")
+        log.error("[IdeaIntakeAgent] Error for user %s: %s", user_id, e)
         raise
 
     finally:

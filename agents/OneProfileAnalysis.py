@@ -1,164 +1,126 @@
-###1 profile analysis (Analysis not chatbot)
-#Assess founder suitability
-#Build personal runway 
-#chat to founder to get more ideas if those are not what they want
-######
+"""
+agents/OneProfileAnalysis.py
+=============================
+Pipeline Step 1 — Founder Profile Analysis.
 
-#input is questionnaireoutput.json and then will output a json insights to be an input for the next agent (problem discovery)
-#  and also will be stored in the database to be used by the future agents in the flow.
+Input  : questionnaire (user_profile + career_profile) + skills list
+Output : founder profile JSON — personality insights, recommended industries,
+         problem spaces, and search keywords for the next agent.
 
+Called by
+---------
+  orchestrator/orchestrator.py  → run_new_user_pipeline()
+  agents/generalBot.py          → _run_new_user_pipeline_inline()
 
-# NOTE: This is the standalone CLI version of ProfileAnalysis.
-# The FastAPI pipeline uses agents/PipelineRunner.run_profile_analysis instead.
-# Keep the two in sync when changing the prompt or output schema.
+The output feeds directly into TwoProblemDiscovery.run_problem_discovery().
+"""
 
 import json
-from db.connection import SessionLocal
-from db import crud
+import logging
+
 from agents.utils import parse_llm_json
 from agents.config import client, GROQ_MODEL
 
-# -------------------------
-def run_profile_analysis(user_id: str):
-    db = SessionLocal()
-    print(f"[ProfileAnalysis] Running for user {user_id}")
-
-    try:
-        questionnaire = crud.get_questionnaire_output_json(db, user_id)
-
-        if not questionnaire:
-            raise ValueError("No questionnaire found")
+log = logging.getLogger(__name__)
 
 
-        prompt = f"""
+def run_profile_analysis(questionnaire: dict, skills: list) -> dict:
+    """
+    Analyse the founder's questionnaire and skills to produce a structured
+    profile used by all downstream agents.
+
+    Key guarantees
+    --------------
+    - keyword_seeds are always present in the output regardless of LLM behaviour
+      (merged after the LLM call so the next agent always has search queries)
+    - Marketplace detection steers keywords toward consumer-facing problems
+    - Region and curiosity domain are injected into keyword seeds explicitly
+    """
+    u = questionnaire.get("user_profile", {})
+    curiosity_domain   = u.get("curiosity_domain", "")
+    business_interests = u.get("business_interests", [])
+    target_region      = u.get("target_region", "")
+    is_marketplace     = any("marketplace" in b.lower() for b in business_interests)
+
+    # Build deterministic keyword seeds so the LLM must expand them, not replace them
+    keyword_seeds = []
+    if curiosity_domain:
+        if is_marketplace:
+            keyword_seeds.append(f"{curiosity_domain} marketplace")
+            keyword_seeds.append(f"{curiosity_domain} online marketplace")
+            if target_region and target_region.lower() != "global":
+                keyword_seeds.append(f"{curiosity_domain} marketplace {target_region}")
+        else:
+            keyword_seeds.append(f"{curiosity_domain} e-commerce")
+            keyword_seeds.append(f"{curiosity_domain} online store")
+    for bi in business_interests:
+        keyword_seeds.append(f"{curiosity_domain} {bi}".strip())
+
+    combined = {
+        "questionnaire":  questionnaire,
+        "skills":         {"skills": skills},
+        "keyword_seeds":  keyword_seeds,
+    }
+
+    prompt = f"""
 You are a senior startup advisor and venture builder.
+Analyze this founder and determine what kind of business they can realistically build.
 
-Your task is to deeply analyze a user and determine what kind of business they can realistically build.
+=== KEYWORD GENERATION RULES (STRICT) ===
+You are given `keyword_seeds` — these are NON-NEGOTIABLE starting points.
+You MUST include ALL keyword_seeds in your `search_direction.keywords` output.
+You may ADD 2-4 more specific variants, but NEVER remove or ignore the seeds.
 
-You MUST:
-- Think critically
-- Avoid generic answers
-- Base ALL recommendations on user skills, experience, and behavior
-- Prefer realistic, executable ideas over fancy ideas
+The seeds were derived from:
+  curiosity_domain   = "{curiosity_domain}"   ← this is the NICHE/ANGLE
+  business_interests = {json.dumps(business_interests)}  ← this is the MODEL
+  target_region      = "{target_region}"
 
--------------------------
-INPUT DATA
--------------------------
-{json.dumps(questionnaire, indent=2)}
+Keywords MUST be domain-specific search queries, e.g.:
+  "Art & Design marketplace pain points"
+  "handmade art online marketplace problems"
+  "digital art platform buyer frustrations"
+NOT generic: "E-commerce Marketplace", "Global Digital Marketplace"
 
--------------------------
-ANALYSIS INSTRUCTIONS
--------------------------
+=== EXECUTION RULES ===
+- skills = {json.dumps(skills)} → if empty, operator/no-code models ONLY
+- Founder setup: {u.get("founder_setup", "")}
+- If "Marketplace" in business_interests → recommended_industries must be consumer-facing marketplace
+- Avoid recommending industries that require skills the user does not have
 
-1. PERSONALITY ANALYSIS
-- Identify thinking style (builder, analytical, creative, operator, etc.)
-- Identify motivation (money, impact, innovation, independence)
-- Identify behavioral traits
+INPUT:
+{json.dumps(combined, indent=2)}
 
-2. SKILL-BASED CAPABILITY ANALYSIS (VERY IMPORTANT)
-- Analyze skills_json carefully
-- Determine what the user can ACTUALLY build
-- Highlight skill gaps
-- Do NOT suggest industries that require skills the user does not have
-
-3. FOUNDER READINESS
-- beginner / intermediate / advanced
-- ability to execute alone vs needs team
-
-4. INDUSTRY MATCHING
-- Recommend industries that:
-  ✔ match skills
-  ✔ match interests
-  ✔ match region
-- Avoid unrealistic industries
-
-5. PROBLEM SPACE SELECTION
-- Suggest REALISTIC problem areas the user can work on
-- Must align with:
-  ✔ skills
-  ✔ market
-  ✔ business type
-
-6. SEARCH DIRECTION (CRITICAL FOR NEXT AGENT)
-- Generate HIGH QUALITY search queries
-- Must be specific and useful for discovering real-world problems
-
-Prioritize industries where the user can BUILD or OPERATE using their current skills.
-
-If the user lacks creative or technical skills, avoid suggesting industries that require them directly.
-
-Prefer platform, service, or operational business models over production-based ones.
-
-Focus on platform, service, or system-level opportunities rather than content creation or production.
-
-Avoid suggesting businesses that require artistic or technical execution unless explicitly supported by user skills.
-
-Prefer problems where the user can act as a strategist, operator, or marketplace builder.
-
--------------------------
-OUTPUT RULES (STRICT)
--------------------------
-- Return ONLY valid JSON
-- No explanations
-- No text outside JSON
-- Keep answers concise but meaningful
-- Avoid generic words like "various", "many", "etc."
-
--------------------------
-OUTPUT FORMAT
--------------------------
+Return ONLY valid JSON:
 {{
-  "personality_insights": {{
-    "type": "...",
-    "motivation": "...",
-    "traits": [],
-    "strengths": [],
-    "weaknesses": []
-  }},
-  "founder_profile": {{
-    "experience_level": "...",
-    "execution_style": "...",
-    "risk_level": "...",
-    "readiness": "...",
-    "skill_level_summary": "...",
-    "key_skill_gaps": []
-  }},
+  "personality_insights": {{"type":"","motivation":"","traits":[],"strengths":[],"weaknesses":[]}},
+  "founder_profile": {{"experience_level":"","execution_style":"","risk_level":"","readiness":"","skill_level_summary":"","key_skill_gaps":[]}},
   "recommended_industries": [],
   "recommended_problem_spaces": [],
-  "search_direction": {{
-    "keywords": []
-  }},
-  "system_flags": {{
-    "needs_guidance": true/false,
-    "should_suggest_learning": true/false
-  }}
+  "search_direction": {{"keywords": []}},
+  "system_flags": {{"needs_guidance": true, "should_suggest_learning": true}}
 }}
 """
 
+    response = client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=[
+            {"role": "system", "content": "Return ONLY valid JSON. No explanation. No markdown."},
+            {"role": "user",   "content": prompt},
+        ],
+        temperature=0.5,
+        max_tokens=2000,
+    )
 
-        response = client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": "Return ONLY valid JSON."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-        )
+    try:
+        result = parse_llm_json(response.choices[0].message.content)
+    except ValueError as e:
+        log.error("[ProfileAnalysis] JSON parse failed: %s", e)
+        raise
 
-        try:
-            result = parse_llm_json(response.choices[0].message.content)
+    # Guarantee seeds are always in the output regardless of what the LLM did
+    existing_kw = result.get("search_direction", {}).get("keywords", [])
+    merged = list(dict.fromkeys(keyword_seeds + existing_kw))   # seeds first, deduped
+    result.setdefault("search_direction", {})["keywords"] = merged[:10]
 
-            crud.save_profile(db, user_id, result)
-
-            print(f"[ProfileAnalysis] Profile saved for user {user_id}")
-
-            return result
-
-        except Exception as e:
-            print("ProfileAnalysis Error:", str(e))
-            raise 
-
-        
-
-    finally:
-        db.close()
+    return result

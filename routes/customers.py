@@ -22,9 +22,9 @@ def generate_customers(user_id: str, db=Depends(get_db)):
     problems_row = crud.get_problems(db, user_id)
 
     if not idea_row:
-        raise HTTPException(status_code=425, detail="Idea not ready. Complete the pipeline first.")
+        raise HTTPException(status_code=409, detail="Idea not ready. Complete the pipeline first.")
     if not problems_row:
-        raise HTTPException(status_code=425, detail="Problems not ready. Complete the pipeline first.")
+        raise HTTPException(status_code=409, detail="Problems not ready. Complete the pipeline first.")
 
     profile_row = crud.get_profile(db, user_id)
 
@@ -49,7 +49,7 @@ def regenerate_customers_custom(data: RegenerateCustomInput, db=Depends(get_db))
     problems_row = crud.get_problems(db, data.user_id)
 
     if not idea_row or not problems_row:
-        raise HTTPException(status_code=425, detail="Idea or problems not ready.")
+        raise HTTPException(status_code=409, detail="Idea or problems not ready.")
 
     profile_row = crud.get_profile(db, data.user_id)
 
@@ -68,7 +68,7 @@ def regenerate_customers_custom(data: RegenerateCustomInput, db=Depends(get_db))
 def chat_customers(data: SectionChatInput, db=Depends(get_db)):
     customers_row = crud.get_customers(db, data.user_id)
     if not customers_row:
-        raise HTTPException(status_code=425, detail="Customer analysis not generated yet. Call POST /customers/{user_id} first.")
+        raise HTTPException(status_code=409, detail="Customer analysis not generated yet. Call POST /customers/{user_id} first.")
 
     from agents.FourCustomersAgent import chat_customers as _chat
     reply = _chat(current_analysis=customers_row.data, user_message=data.message, history=data.history)
@@ -86,7 +86,7 @@ def chat_customers(data: SectionChatInput, db=Depends(get_db)):
 def chat_customers_stream(data: SectionChatInput, db=Depends(get_db)) -> StreamingResponse:
     customers_row = crud.get_customers(db, data.user_id)
     if not customers_row:
-        raise HTTPException(status_code=425, detail="Customer analysis not generated yet.")
+        raise HTTPException(status_code=409, detail="Customer analysis not generated yet.")
 
     from agents.PipelineRunner import groq_client, GROQ_MODEL
     from System_Messages.customers_prompt import CUSTOMERS_CHAT_PROMPT

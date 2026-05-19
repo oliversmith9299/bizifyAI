@@ -24,7 +24,7 @@ def idea_intake(data: IdeaIntakeInput):
 def idea_intake_run_problems(user_id: str, background_tasks: BackgroundTasks, db=Depends(get_db)):
     intake = crud.get_idea_intake_json(db, user_id)
     if not intake or intake.get("decision") == "needs_clarification":
-        raise HTTPException(status_code=425, detail="Idea intake not ready. Complete /idea-intake first.")
+        raise HTTPException(status_code=409, detail="Idea intake not ready. Complete /idea-intake first.")
 
     crud.upsert_pipeline_status(db, user_id, "pending")
 
@@ -45,9 +45,9 @@ def idea_intake_start_chat(data: UserIdInput, db=Depends(get_db)):
     problems_row = crud.get_problems(db, data.user_id)
 
     if not intake or intake.get("decision") == "needs_clarification":
-        raise HTTPException(status_code=425, detail="Idea intake is not ready yet.")
+        raise HTTPException(status_code=409, detail="Idea intake is not ready yet.")
     if not problems_row:
-        raise HTTPException(status_code=425, detail="Problem discovery is not ready yet.")
+        raise HTTPException(status_code=409, detail="Problem discovery is not ready yet.")
 
     from agents.ThreeIdeaIntakeAgent import (
         _build_profile_for_problem_discovery,
@@ -55,11 +55,19 @@ def idea_intake_start_chat(data: UserIdInput, db=Depends(get_db)):
     )
     from agents.PipelineRunner import build_context, groq_client, GROQ_MODEL, IDEA_SYSTEM_PROMPT
 
+    # Load the user's real questionnaire so build_questionnaire uses their actual
+    # founder_setup, risk_tolerance, and career_profile — not hardcoded defaults.
+    real_questionnaire   = crud.get_questionnaire_from_profile(db, data.user_id) or {}
+
     profile_compat       = _build_profile_for_problem_discovery(intake)
-    questionnaire_compat = _build_questionnaire_for_problem_discovery(intake)
+    questionnaire_compat = _build_questionnaire_for_problem_discovery(intake, real_questionnaire)
     questionnaire_compat["skills"] = []
 
-    crud.save_profile(db, data.user_id, profile_compat)
+    # Only save the stub profile if the user has no real profile yet.
+    # Returning users who completed the questionnaire flow keep their full profile.
+    existing_profile = crud.get_profile(db, data.user_id)
+    if not existing_profile:
+        crud.save_profile(db, data.user_id, profile_compat)
     crud.save_questionnaire_output(db, data.user_id, questionnaire_compat)
 
     context = build_context(problems_row.data, questionnaire_compat, [])

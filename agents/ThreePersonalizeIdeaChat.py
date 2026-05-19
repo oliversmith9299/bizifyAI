@@ -1,6 +1,23 @@
-#3
+"""
+agents/ThreePersonalizeIdeaChat.py
+====================================
+Pipeline Step 3 — Idea Generation & Chat.
 
-from typing import Dict, List
+Provides:
+  IDEA_SYSTEM_PROMPT       — shared prompt used by all idea chat endpoints
+  build_context()          — builds the founder constraint + problem context string
+  generate_opening_idea()  — generates the first idea (stateless, one LLM call)
+  generate_idea()          — richer version with domain-specific opening
+  chat_idea()              — stateless chat turn for refining ideas
+
+Called by
+---------
+  orchestrator/orchestrator.py → generate_opening_idea, build_context
+  agents/generalBot.py         → generate_opening_idea, build_context
+  routes/pipeline.py           → IDEA_SYSTEM_PROMPT, groq_client, GROQ_MODEL
+"""
+
+from typing import List
 
 from agents.config import client, GROQ_MODEL
 
@@ -78,10 +95,9 @@ or any B2B problem after the user asked for B2C — STOP and restart.
 # CONTEXT BUILDER
 # ─────────────────────────────────────────────
 def build_context(
-    profile: dict,
     problems: dict,
     questionnaire: dict,
-    skills: List[str]
+    skills: List[str],
 ) -> str:
     u = questionnaire.get("user_profile", {})
     career = questionnaire.get("career_profile", {})
@@ -197,6 +213,25 @@ def generate_idea(
         max_tokens=1000,
     )
 
+    return response.choices[0].message.content.strip()
+
+
+def generate_opening_idea(context: str) -> str:
+    """
+    Standard single-arg entry point used by the orchestrator and generalBot.
+    Delegates to generate_idea() with a generic opening prompt.
+    """
+    messages = [
+        {"role": "system", "content": IDEA_SYSTEM_PROMPT},
+        {"role": "system", "content": context},
+        {"role": "user",   "content": "Generate the ONE best startup idea for this founder using the exact structured format."},
+    ]
+    response = client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=messages,
+        temperature=0.4,
+        max_tokens=1000,
+    )
     return response.choices[0].message.content.strip()
 
 

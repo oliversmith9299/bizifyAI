@@ -20,9 +20,9 @@ def _load_deps(user_id: str, db: Any) -> tuple:
     idea_row     = crud.get_idea(db, user_id)
     problems_row = crud.get_problems(db, user_id)
     if not idea_row:
-        raise HTTPException(status_code=425, detail="Idea not ready. Complete the pipeline first.")
+        raise HTTPException(status_code=409, detail="Idea not ready. Complete the pipeline first.")
     if not problems_row:
-        raise HTTPException(status_code=425, detail="Problems not ready. Complete the pipeline first.")
+        raise HTTPException(status_code=409, detail="Problems not ready. Complete the pipeline first.")
     return (
         idea_row, problems_row,
         crud.get_customers(db, user_id),
@@ -85,7 +85,7 @@ def regenerate_go_to_market_custom(data: RegenerateCustomInput, db=Depends(get_d
 def chat_go_to_market(data: SectionChatInput, db=Depends(get_db)):
     gtm_row = crud.get_go_to_market(db, data.user_id)
     if not gtm_row:
-        raise HTTPException(status_code=425, detail="GTM plan not generated yet. Call POST /go-to-market/{user_id} first.")
+        raise HTTPException(status_code=409, detail="GTM plan not generated yet. Call POST /go-to-market/{user_id} first.")
 
     from agents.TwelveGoToMarket import chat_go_to_market as _chat
     reply = _chat(current_analysis=gtm_row.data, user_message=data.message, history=data.history)
@@ -103,7 +103,7 @@ def chat_go_to_market(data: SectionChatInput, db=Depends(get_db)):
 def chat_go_to_market_stream(data: SectionChatInput, db=Depends(get_db)) -> StreamingResponse:
     gtm_row = crud.get_go_to_market(db, data.user_id)
     if not gtm_row:
-        raise HTTPException(status_code=425, detail="GTM plan not generated yet.")
+        raise HTTPException(status_code=409, detail="GTM plan not generated yet.")
 
     from agents.PipelineRunner import groq_client, GROQ_MODEL
     from System_Messages.go_to_market_prompt import GO_TO_MARKET_CHAT_PROMPT

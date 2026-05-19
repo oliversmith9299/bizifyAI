@@ -26,14 +26,6 @@ import logging
 import re
 from typing import Optional
 
-# ── keyword sets used by the fast pre-classifier ─────────────────────────────
-_IDEA_WORDS    = {"idea", "ideas"}
-_ACTION_WORDS  = {"make", "create", "build", "start", "generate", "want", "need",
-                  "define", "help", "work", "new", "get", "develop", "explore"}
-_CONFIRM_WORDS = {"yes", "yeah", "yep", "sure", "ok", "okay", "go", "do",
-                  "proceed", "please", "correct", "right", "absolutely", "definitely"}
-_DECLINE_WORDS = {"no", "nope", "nah", "cancel", "stop", "skip", "not", "dont",
-                  "don't", "nevermind", "never", "later", "wait"}
 
 from agents.config import client, GROQ_MODEL
 from agents.utils import parse_llm_json
@@ -102,36 +94,6 @@ _SECTION_ORDER = [
 # ─────────────────────────────────────────────────────────────────────────────
 
 _PENDING_RE = re.compile(r"<!--PENDING:([^-]+?)-->")
-
-
-def _quick_classify(message: str, has_pending: bool) -> Optional[dict]:
-    """
-    Keyword-based fast classifier that runs BEFORE the LLM call.
-    Handles unambiguous cases without spending an LLM call.
-    Returns a classification dict or None (meaning: use LLM).
-    """
-    words = set(message.lower().split())
-    clean = message.lower().strip()
-
-    # Idea-related: message contains "idea" + an action word, or is just "idea"
-    if _IDEA_WORDS & words:
-        if (_ACTION_WORDS & words) or len(words) <= 4:
-            return {"intent": "run_section", "section": "idea_intake",
-                    "confidence": 0.95, "reasoning": "keyword: idea + action"}
-
-    # Confirmation — only relevant when there's a pending confirmation waiting
-    if has_pending and (clean in _CONFIRM_WORDS or
-                        any(w in _CONFIRM_WORDS for w in words)):
-        return {"intent": "confirm_action", "section": None,
-                "confidence": 0.95, "reasoning": "confirmation keyword"}
-
-    # Decline
-    if has_pending and (clean in _DECLINE_WORDS or
-                        any(w in _DECLINE_WORDS for w in words)):
-        return {"intent": "decline_action", "section": None,
-                "confidence": 0.95, "reasoning": "decline keyword"}
-
-    return None
 
 
 def _embed_pending(reply: str, sections: list[str]) -> str:
@@ -254,28 +216,41 @@ def _load_section_data(user_id: str, section: Optional[str], db) -> Optional[dic
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _classify_intent(message: str, history: list, snapshot: dict) -> dict:
-    # Fast keyword pass first — avoids an LLM call for common unambiguous cases
-    has_pending = bool(_extract_pending(history))
-    quick = _quick_classify(message, has_pending)
-    if quick:
-        return quick
+    """
+    Classify the user's intent using the LLM on every message.
 
-    # Full LLM classification
+    No keyword shortcuts — keywords produce silent wrong results for edge cases
+    like "I'm not sure yet" (would wrongly match 'not' → decline) or
+    "definitely not" (matches both confirm and decline sets simultaneously).
+    The LLM understands full context; keywords don't.
+
+    The context explicitly tells the LLM whether a confirmation is pending
+    and what sections are waiting, so confirm/decline detection is reliable.
+    """
+    pending_sections = _extract_pending(history)
+    has_pending      = bool(pending_sections)
+
     done_sections    = [k for k, v in snapshot["sections"].items() if v["done"]]
-    pending_sections = [k for k, v in snapshot["sections"].items() if not v["done"]]
+    not_done         = [k for k, v in snapshot["sections"].items() if not v["done"]]
     last_bot = next(
-        (m["content"][:300] for m in reversed(history) if m.get("role") == "assistant"),
+        (m["content"][:400] for m in reversed(history) if m.get("role") == "assistant"),
         "none",
     )
-    context = (
-        f"Completed sections: {done_sections}\n"
-        f"Pending sections: {pending_sections}\n"
-        f"Last assistant message (for confirm/decline detection): {last_bot}"
-    )
+
+    context_lines = [
+        f"Completed sections: {done_sections}",
+        f"Not yet generated: {not_done}",
+        f"Awaiting user confirmation: {has_pending}",
+    ]
+    if has_pending:
+        context_lines.append(
+            f"Sections waiting to run (user must confirm): {pending_sections}"
+        )
+    context_lines.append(f"Last assistant message: {last_bot}")
 
     messages = [
         {"role": "system", "content": INTENT_CLASSIFIER_PROMPT},
-        {"role": "system", "content": context},
+        {"role": "system", "content": "\n".join(context_lines)},
         *history[-6:],
         {"role": "user",   "content": message},
     ]
@@ -285,8 +260,94 @@ def _classify_intent(message: str, history: list, snapshot: dict) -> dict:
             model=GROQ_MODEL, messages=messages, temperature=0.1, max_tokens=200,
         )
         return parse_llm_json(resp.choices[0].message.content)
-    except Exception:
+    except Exception as e:
+        log.warning("[GeneralBot] intent classification failed (%s) — defaulting to chat", e)
         return {"intent": "general_startup_chat", "section": None, "confidence": 0.5}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section dispatch table
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Each entry: section_key → {
+#   "module"  : dotted import path of the agent module
+#   "fn"      : function name inside that module
+#   "needs"   : {db_getter_key: kwarg_name} — extra DB rows to load
+#   "save"    : crud function name to persist the result
+#   "problems": True if the agent function accepts a `problems` kwarg
+# }
+#
+# Adding a new section = adding one dict entry here. Nothing else changes.
+
+_DB_GETTERS = {
+    "profile":          lambda db, uid: crud.get_profile(db, uid),
+    "customers":        lambda db, uid: crud.get_customers(db, uid),
+    "competition":      lambda db, uid: crud.get_competition(db, uid),
+    "market_potential": lambda db, uid: crud.get_market_potential(db, uid),
+    "idea_strategy":    lambda db, uid: crud.get_idea_strategy(db, uid),
+    "business_model":   lambda db, uid: crud.get_business_model(db, uid),
+    "functions_list":   lambda db, uid: crud.get_functions_list(db, uid),
+    "mvp_planning":     lambda db, uid: crud.get_mvp_planning(db, uid),
+    "unit_economics":   lambda db, uid: crud.get_unit_economics(db, uid),
+}
+
+_SECTION_DISPATCH: dict[str, dict] = {
+    "customers": {
+        "module": "agents.FourCustomersAgent", "fn": "run_customers_analysis",
+        "needs": {"profile": "profile"},
+        "save": "save_customers", "problems": True,
+    },
+    "competition": {
+        "module": "agents.FiveCompetitionAgent", "fn": "run_competition_analysis",
+        "needs": {"customers": "customers"},
+        "save": "save_competition", "problems": True,
+    },
+    "market_potential": {
+        "module": "agents.SixMaketPotential", "fn": "run_market_potential",
+        "needs": {"customers": "customers", "competition": "competition"},
+        "save": "save_market_potential", "problems": True,
+    },
+    "idea_strategy": {
+        "module": "agents.SevenIdeaStrategy", "fn": "run_idea_strategy",
+        "needs": {"customers": "customers", "competition": "competition", "market_potential": "market_potential"},
+        "save": "save_idea_strategy", "problems": True,
+    },
+    "business_model": {
+        "module": "agents.EightBusinessModel", "fn": "run_business_model",
+        "needs": {"customers": "customers", "competition": "competition",
+                  "market_potential": "market_potential", "idea_strategy": "strategy"},
+        "save": "save_business_model", "problems": True,
+    },
+    "functions_list": {
+        "module": "agents.NineFunctionsList", "fn": "run_functions_list",
+        "needs": {"customers": "customers", "competition": "competition",
+                  "market_potential": "market_potential", "idea_strategy": "strategy",
+                  "business_model": "business_model"},
+        "save": "save_functions_list", "problems": True,
+    },
+    "mvp_planning": {
+        "module": "agents.TenMVPPlanning", "fn": "run_mvp_planning",
+        "needs": {"customers": "customers", "market_potential": "market_potential",
+                  "idea_strategy": "strategy", "business_model": "business_model",
+                  "functions_list": "functions_list"},
+        "save": "save_mvp_planning", "problems": True,
+    },
+    "unit_economics": {
+        "module": "agents.ElevenUnitEconomicsAgent", "fn": "run_unit_economics",
+        "needs": {"customers": "customers", "market_potential": "market_potential",
+                  "idea_strategy": "strategy", "business_model": "business_model",
+                  "mvp_planning": "mvp_planning"},
+        "save": "save_unit_economics", "problems": False,  # unit_economics has no problems param
+    },
+    "go_to_market": {
+        "module": "agents.TwelveGoToMarket", "fn": "run_go_to_market",
+        "needs": {"customers": "customers", "competition": "competition",
+                  "market_potential": "market_potential", "idea_strategy": "strategy",
+                  "business_model": "business_model", "mvp_planning": "mvp_planning",
+                  "unit_economics": "unit_economics"},
+        "save": "save_go_to_market", "problems": True,
+    },
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -295,162 +356,40 @@ def _classify_intent(message: str, history: list, snapshot: dict) -> dict:
 
 def _run_one_section(section: str, user_id: str, db) -> dict:
     """
-    Import the right agent, call it with all available context from DB,
-    save the result to DB, and return the result dict.
+    Look up the section in _SECTION_DISPATCH, load required DB context,
+    call the agent, save the result, and return it.
+
+    Adding a new section requires only a new entry in _SECTION_DISPATCH above.
     """
+    import importlib
+
+    cfg = _SECTION_DISPATCH.get(section)
+    if cfg is None:
+        raise ValueError(f"Unknown runnable section: {section!r}")
+
+    # Base data every agent needs
     idea_row     = crud.get_idea(db, user_id)
     problems_row = crud.get_problems(db, user_id)
-    idea_text    = idea_row.current_idea if idea_row else ""
-    problems     = problems_row.data if problems_row else {}
 
-    if section == "customers":
-        from agents.FourCustomersAgent import run_customers_analysis
-        profile_row = crud.get_profile(db, user_id)
-        result = run_customers_analysis(
-            user_id=user_id,
-            idea=idea_text,
-            problems=problems,
-            profile=profile_row.data if profile_row else None,
-        )
-        crud.save_customers(db, user_id, result)
+    kwargs: dict = {
+        "user_id": user_id,
+        "idea":    idea_row.current_idea if idea_row else "",
+    }
+    if cfg["problems"]:
+        kwargs["problems"] = problems_row.data if problems_row else {}
 
-    elif section == "competition":
-        from agents.FiveCompetitionAgent import run_competition_analysis
-        customers_row = crud.get_customers(db, user_id)
-        result = run_competition_analysis(
-            user_id=user_id,
-            idea=idea_text,
-            problems=problems,
-            customers=customers_row.data if customers_row else None,
-        )
-        crud.save_competition(db, user_id, result)
+    # Load additional context rows requested by this section
+    for db_key, kwarg_name in cfg["needs"].items():
+        row = _DB_GETTERS[db_key](db, user_id)
+        kwargs[kwarg_name] = row.data if row else None
 
-    elif section == "market_potential":
-        from agents.SixMaketPotential import run_market_potential
-        customers_row   = crud.get_customers(db, user_id)
-        competition_row = crud.get_competition(db, user_id)
-        result = run_market_potential(
-            user_id=user_id,
-            idea=idea_text,
-            problems=problems,
-            customers=customers_row.data   if customers_row   else None,
-            competition=competition_row.data if competition_row else None,
-        )
-        crud.save_market_potential(db, user_id, result)
+    # Lazy-import the agent module and call the function
+    module    = importlib.import_module(cfg["module"])
+    agent_fn  = getattr(module, cfg["fn"])
+    result    = agent_fn(**kwargs)
 
-    elif section == "idea_strategy":
-        from agents.SevenIdeaStrategy import run_idea_strategy
-        customers_row   = crud.get_customers(db, user_id)
-        competition_row = crud.get_competition(db, user_id)
-        mp_row          = crud.get_market_potential(db, user_id)
-        result = run_idea_strategy(
-            user_id=user_id,
-            idea=idea_text,
-            problems=problems,
-            customers=customers_row.data     if customers_row   else None,
-            competition=competition_row.data if competition_row else None,
-            market_potential=mp_row.data     if mp_row          else None,
-        )
-        crud.save_idea_strategy(db, user_id, result)
-
-    elif section == "business_model":
-        from agents.EightBusinessModel import run_business_model
-        customers_row   = crud.get_customers(db, user_id)
-        competition_row = crud.get_competition(db, user_id)
-        mp_row          = crud.get_market_potential(db, user_id)
-        strategy_row    = crud.get_idea_strategy(db, user_id)
-        result = run_business_model(
-            user_id=user_id,
-            idea=idea_text,
-            problems=problems,
-            customers=customers_row.data     if customers_row   else None,
-            competition=competition_row.data if competition_row else None,
-            market_potential=mp_row.data     if mp_row          else None,
-            strategy=strategy_row.data       if strategy_row    else None,
-        )
-        crud.save_business_model(db, user_id, result)
-
-    elif section == "functions_list":
-        from agents.NineFunctionsList import run_functions_list
-        customers_row   = crud.get_customers(db, user_id)
-        competition_row = crud.get_competition(db, user_id)
-        mp_row          = crud.get_market_potential(db, user_id)
-        strategy_row    = crud.get_idea_strategy(db, user_id)
-        bm_row          = crud.get_business_model(db, user_id)
-        result = run_functions_list(
-            user_id=user_id,
-            idea=idea_text,
-            problems=problems,
-            customers=customers_row.data     if customers_row   else None,
-            competition=competition_row.data if competition_row else None,
-            market_potential=mp_row.data     if mp_row          else None,
-            strategy=strategy_row.data       if strategy_row    else None,
-            business_model=bm_row.data       if bm_row          else None,
-        )
-        crud.save_functions_list(db, user_id, result)
-
-    elif section == "mvp_planning":
-        from agents.TenMVPPlanning import run_mvp_planning
-        customers_row = crud.get_customers(db, user_id)
-        mp_row        = crud.get_market_potential(db, user_id)
-        strategy_row  = crud.get_idea_strategy(db, user_id)
-        bm_row        = crud.get_business_model(db, user_id)
-        fl_row        = crud.get_functions_list(db, user_id)
-        result = run_mvp_planning(
-            user_id=user_id,
-            idea=idea_text,
-            problems=problems,
-            customers=customers_row.data if customers_row else None,
-            market_potential=mp_row.data if mp_row        else None,
-            strategy=strategy_row.data   if strategy_row  else None,
-            business_model=bm_row.data   if bm_row        else None,
-            functions_list=fl_row.data   if fl_row        else None,
-        )
-        crud.save_mvp_planning(db, user_id, result)
-
-    elif section == "unit_economics":
-        from agents.ElevenUnitEconomicsAgent import run_unit_economics
-        customers_row = crud.get_customers(db, user_id)
-        mp_row        = crud.get_market_potential(db, user_id)
-        strategy_row  = crud.get_idea_strategy(db, user_id)
-        bm_row        = crud.get_business_model(db, user_id)
-        mvp_row       = crud.get_mvp_planning(db, user_id)
-        result = run_unit_economics(
-            user_id=user_id,
-            idea=idea_text,
-            customers=customers_row.data if customers_row else None,
-            market_potential=mp_row.data if mp_row        else None,
-            strategy=strategy_row.data   if strategy_row  else None,
-            business_model=bm_row.data   if bm_row        else None,
-            mvp_planning=mvp_row.data    if mvp_row       else None,
-        )
-        crud.save_unit_economics(db, user_id, result)
-
-    elif section == "go_to_market":
-        from agents.TwelveGoToMarket import run_go_to_market
-        customers_row   = crud.get_customers(db, user_id)
-        competition_row = crud.get_competition(db, user_id)
-        mp_row          = crud.get_market_potential(db, user_id)
-        strategy_row    = crud.get_idea_strategy(db, user_id)
-        bm_row          = crud.get_business_model(db, user_id)
-        mvp_row         = crud.get_mvp_planning(db, user_id)
-        ue_row          = crud.get_unit_economics(db, user_id)
-        result = run_go_to_market(
-            user_id=user_id,
-            idea=idea_text,
-            problems=problems,
-            customers=customers_row.data     if customers_row   else None,
-            competition=competition_row.data if competition_row else None,
-            market_potential=mp_row.data     if mp_row          else None,
-            strategy=strategy_row.data       if strategy_row    else None,
-            business_model=bm_row.data       if bm_row          else None,
-            mvp_planning=mvp_row.data        if mvp_row         else None,
-            unit_economics=ue_row.data       if ue_row          else None,
-        )
-        crud.save_go_to_market(db, user_id, result)
-
-    else:
-        raise ValueError(f"Unknown runnable section: {section!r}")
+    # Persist via the matching crud save function
+    getattr(crud, cfg["save"])(db, user_id, result)
 
     return result
 

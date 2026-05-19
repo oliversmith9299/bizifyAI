@@ -20,9 +20,9 @@ def _load_deps(user_id: str, db: Any) -> tuple:
     idea_row     = crud.get_idea(db, user_id)
     problems_row = crud.get_problems(db, user_id)
     if not idea_row:
-        raise HTTPException(status_code=425, detail="Idea not ready. Complete the pipeline first.")
+        raise HTTPException(status_code=409, detail="Idea not ready. Complete the pipeline first.")
     if not problems_row:
-        raise HTTPException(status_code=425, detail="Problems not ready. Complete the pipeline first.")
+        raise HTTPException(status_code=409, detail="Problems not ready. Complete the pipeline first.")
     return (
         idea_row, problems_row,
         crud.get_customers(db, user_id),
@@ -76,7 +76,7 @@ def regenerate_business_model_custom(data: RegenerateCustomInput, db=Depends(get
 def chat_business_model(data: SectionChatInput, db=Depends(get_db)):
     bm_row = crud.get_business_model(db, data.user_id)
     if not bm_row:
-        raise HTTPException(status_code=425, detail="Business model not generated yet. Call POST /business-model/{user_id} first.")
+        raise HTTPException(status_code=409, detail="Business model not generated yet. Call POST /business-model/{user_id} first.")
 
     from agents.EightBusinessModel import chat_business_model as _chat
     reply = _chat(current_analysis=bm_row.data, user_message=data.message, history=data.history)
@@ -94,7 +94,7 @@ def chat_business_model(data: SectionChatInput, db=Depends(get_db)):
 def chat_business_model_stream(data: SectionChatInput, db=Depends(get_db)) -> StreamingResponse:
     bm_row = crud.get_business_model(db, data.user_id)
     if not bm_row:
-        raise HTTPException(status_code=425, detail="Business model not generated yet.")
+        raise HTTPException(status_code=409, detail="Business model not generated yet.")
 
     from agents.PipelineRunner import groq_client, GROQ_MODEL
     from System_Messages.business_model_prompt import BUSINESS_MODEL_CHAT_PROMPT

@@ -30,7 +30,12 @@ if not GROQ_MODEL:
 client = OpenAI(api_key=GROQ_API_KEY, base_url=GROQ_API_BASE)
 
 # ── Search ────────────────────────────────────────────────────────────────────
-SERPER_API_KEY = os.getenv("SERPER_API_KEY")
+SERPER_API_KEY  = os.getenv("SERPER_API_KEY")
+TAVILY_API_KEY  = os.getenv("TAVILY_API_KEY")
+
+# Fast, cheap Groq model used only for structured data extraction from sources.
+# Kept separate from GROQ_MODEL so the main analysis always uses the best model.
+GROQ_EXTRACTION_MODEL = "llama-3.1-8b-instant"
 
 # ── Security ──────────────────────────────────────────────────────────────────
 API_SECRET_KEY = os.getenv("API_SECRET_KEY")

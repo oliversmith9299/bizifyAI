@@ -27,9 +27,24 @@ import json
 import logging
 import time
 
-from agents.utils import gather_sources, parse_llm_json, truncate_sources
+from agents.utils import parse_llm_json
+from agents.search_pipeline import run_search_pipeline, SearchResults
 from agents.schemas import validate_section_output
-from agents.config import client, GROQ_MODEL, SERPER_API_KEY
+from agents.config import client, GROQ_MODEL, SERPER_API_KEY, TAVILY_API_KEY, GROQ_EXTRACTION_MODEL
+
+_SEARCH_DOMAINS = [
+    "indiehackers.com", "producthunt.com", "ycombinator.com",
+    "firstround.com", "a16z.com", "techcrunch.com", "growthhackers.com",
+]
+
+_EXTRACTION_SCHEMA = {
+    "acquisition_channels": "most effective marketing and sales channels for this type of product",
+    "channel_costs": "CAC or cost per lead for specific channels (e.g. Instagram CPL, Google CPC)",
+    "launch_strategies": "how similar companies launched successfully (Product Hunt, communities, etc.)",
+    "growth_tactics": "specific tactics that drove early user growth",
+    "region_channels": "channels that work specifically in MENA, Egypt, or the target region",
+    "partnership_types": "strategic partnerships or distribution deals that accelerated growth",
+}
 from db.connection import SessionLocal
 from db import crud
 from System_Messages.go_to_market_prompt import (
@@ -109,8 +124,7 @@ def _build_analysis_context(
     mvp_planning: dict,
     unit_economics: dict,
     region: str,
-    sources: list,
-    source_mode: str,
+    search: SearchResults,
 ) -> str:
     parts = [
         "=== SAVED IDEA ===",
@@ -219,17 +233,13 @@ def _build_analysis_context(
     for p in problems.get("problems", [])[:3]:
         parts.append(f"  [{p.get('id','?')}] {p.get('title','')}")
 
-    if sources:
-        parts += [
-            "",
-            f"=== WEB RESEARCH ({len(sources)} sources — launch playbooks + channel benchmarks) ===",
-        ]
-        for s in sources:
-            parts.append(f"[{s['url']}]\n{s['content'][:600]}")
+    web_context = search.to_prompt_context()
+    if web_context:
+        parts += ["", web_context]
     else:
         parts += [
             "",
-            f"=== SOURCE MODE: {source_mode} ===",
+            f"=== SOURCE MODE: {search.source_mode} ===",
             "No web sources. Base GTM plan on customer, strategy, and business model data above.",
         ]
 
@@ -289,28 +299,26 @@ def run_go_to_market(
             if region != "Global":
                 break
 
-    # ── 1. Search ────────────────────────────────────────────────────────────
-    sources: list = []
-    source_mode   = "synthesis_only"
-
-    if SERPER_API_KEY:
-        queries = _build_search_queries(
-            idea, customers or {}, competition or {}, business_model or {}, region
-        )
-        sources = gather_sources(queries, SERPER_API_KEY, max_sources=10)
-        source_mode = "web_sourced" if sources else "synthesis_only"
-    else:
-        log.warning("SERPER_API_KEY not set — GTM plan based on pipeline data only")
+    # ── 1. Search + extract ──────────────────────────────────────────────────
+    search = run_search_pipeline(
+        queries=_build_search_queries(idea, customers or {}, competition or {}, business_model or {}, region),
+        tavily_api_key=TAVILY_API_KEY,
+        extraction_schema=_EXTRACTION_SCHEMA,
+        keywords=[idea.split()[0] if idea else "", region, "acquisition", "launch", "growth", "marketing"],
+        include_domains=_SEARCH_DOMAINS,
+        groq_client=client,
+        extraction_model=GROQ_EXTRACTION_MODEL,
+        serper_fallback_key=SERPER_API_KEY,
+    )
 
     # ── 2. Build prompt ──────────────────────────────────────────────────────
-    sources = truncate_sources(sources)
     context = _build_analysis_context(
         idea, problems,
         customers or {}, competition or {},
         market_potential or {}, strategy or {},
         business_model or {}, mvp_planning or {},
         unit_economics or {},
-        region, sources, source_mode,
+        region, search,
     )
 
     user_content = context
@@ -318,21 +326,30 @@ def run_go_to_market(
         user_content += f"\n\n=== ADDITIONAL INSTRUCTION ===\n{custom_prompt}"
 
     # ── 3. LLM call ──────────────────────────────────────────────────────────
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[
-            {"role": "system", "content": GO_TO_MARKET_PROMPT},
-            {"role": "user",   "content": user_content},
-        ],
-        temperature=0.4,
-        max_tokens=4500,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": GO_TO_MARKET_PROMPT},
+                {"role": "user",   "content": user_content},
+            ],
+            temperature=0.4,
+            max_tokens=4500,
+        )
+    except Exception as e:
+        log.error("[TwelveGoToMarket] LLM call failed: %s", e)
+        raise
 
-    raw    = response.choices[0].message.content
-    result = validate_section_output("go_to_market", parse_llm_json(raw))
-    result["source_mode"]  = source_mode
-    result["sources_used"] = len(sources)
-    result["sources_list"] = [{"url": s["url"], "title": s.get("title", s["url"])} for s in sources]
+    raw = response.choices[0].message.content
+    try:
+        result = validate_section_output("go_to_market", parse_llm_json(raw))
+    except ValueError as e:
+        log.error("[TwelveGoToMarket] JSON parse failed: %s", e)
+        raise
+    sources_used, sources_list = search.to_sources_meta()
+    result["source_mode"]  = search.source_mode
+    result["sources_used"] = sources_used
+    result["sources_list"] = sources_list
 
     # ── 4. Persist ───────────────────────────────────────────────────────────
     db = SessionLocal()

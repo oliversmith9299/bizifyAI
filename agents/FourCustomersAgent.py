@@ -24,14 +24,29 @@ DB flow:
 import json
 import logging
 
-from agents.utils import gather_sources, parse_llm_json, truncate_sources
+from agents.utils import parse_llm_json
+from agents.search_pipeline import run_search_pipeline, SearchResults
 from agents.schemas import validate_section_output
-from agents.config import client, GROQ_MODEL, SERPER_API_KEY
+from agents.config import client, GROQ_MODEL, SERPER_API_KEY, TAVILY_API_KEY, GROQ_EXTRACTION_MODEL
 from db.connection import SessionLocal
 from db import crud
 from System_Messages.customers_prompt import CUSTOMERS_ANALYSIS_PROMPT, CUSTOMERS_CHAT_PROMPT
 
 log = logging.getLogger(__name__)
+
+_SEARCH_DOMAINS = [
+    "reddit.com", "quora.com", "statista.com", "nielsen.com",
+    "medium.com", "thinkwithgoogle.com", "pewresearch.org",
+]
+
+_EXTRACTION_SCHEMA = {
+    "target_demographics": "age group, location, income level, occupation of main customers",
+    "pain_points": "specific problems or frustrations customers face",
+    "buying_behavior": "how customers discover, evaluate, and purchase products like this",
+    "willingness_to_pay": "price sensitivity or what they currently spend on solutions",
+    "market_size": "size or estimated count of this customer segment",
+    "acquisition_channels": "where these customers spend time online and how to reach them",
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -94,8 +109,7 @@ def _build_analysis_context(
     idea: str,
     problems: dict,
     profile: dict,
-    sources: list,
-    source_mode: str,
+    search: SearchResults,
 ) -> str:
     parts = [
         "=== SAVED IDEA ===",
@@ -125,14 +139,13 @@ def _build_analysis_context(
             f"  Problem spaces: {profile.get('recommended_problem_spaces', [])}",
         ]
 
-    if sources:
-        parts += ["", f"=== WEB RESEARCH ({len(sources)} sources) ==="]
-        for s in sources:
-            parts.append(f"[{s['url']}]\n{s['content'][:600]}")
+    web_context = search.to_prompt_context()
+    if web_context:
+        parts += ["", web_context]
     else:
         parts += [
             "",
-            f"=== SOURCE MODE: {source_mode} ===",
+            f"=== SOURCE MODE: {search.source_mode} ===",
             "No web sources found. Base analysis on idea and problem data above.",
         ]
 
@@ -173,41 +186,51 @@ def run_customers_analysis(
             or ""
         )
 
-    # ── 1. Search ────────────────────────────────────────────────────────────
-    sources = []
-    source_mode = "profile_derived"
-
-    if SERPER_API_KEY:
-        queries = _build_search_queries(idea, problems, region)
-        sources = gather_sources(queries, SERPER_API_KEY, max_sources=10)
-        source_mode = "web_sourced" if sources else "profile_derived"
-    else:
-        log.warning("SERPER_API_KEY not set — skipping web search")
+    # ── 1. Search + extract ──────────────────────────────────────────────────
+    search = run_search_pipeline(
+        queries=_build_search_queries(idea, problems, region),
+        tavily_api_key=TAVILY_API_KEY,
+        extraction_schema=_EXTRACTION_SCHEMA,
+        keywords=[idea.split()[0] if idea else "", region, "customer", "segment", "pain point"],
+        include_domains=_SEARCH_DOMAINS,
+        groq_client=client,
+        extraction_model=GROQ_EXTRACTION_MODEL,
+        serper_fallback_key=SERPER_API_KEY,
+    )
 
     # ── 2. Build prompt ──────────────────────────────────────────────────────
-    sources = truncate_sources(sources)
-    context = _build_analysis_context(idea, problems, profile or {}, sources, source_mode)
+    context = _build_analysis_context(idea, problems, profile or {}, search)
 
     user_content = context
     if custom_prompt:
         user_content += f"\n\n=== ADDITIONAL INSTRUCTION ===\n{custom_prompt}"
 
     # ── 3. LLM call ──────────────────────────────────────────────────────────
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[
-            {"role": "system", "content": CUSTOMERS_ANALYSIS_PROMPT},
-            {"role": "user",   "content": user_content},
-        ],
-        temperature=0.4,
-        max_tokens=4000,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": CUSTOMERS_ANALYSIS_PROMPT},
+                {"role": "user",   "content": user_content},
+            ],
+            temperature=0.4,
+            max_tokens=4000,
+        )
+    except Exception as e:
+        log.error("[FourCustomersAgent] LLM call failed: %s", e)
+        raise
 
-    raw    = response.choices[0].message.content
-    result = validate_section_output("customers", parse_llm_json(raw))
-    result["source_mode"]   = source_mode
-    result["sources_used"]  = len(sources)
-    result["sources_list"]  = [{"url": s["url"], "title": s.get("title", s["url"])} for s in sources]
+    raw = response.choices[0].message.content
+    try:
+        result = validate_section_output("customers", parse_llm_json(raw))
+    except ValueError as e:
+        log.error("[FourCustomers] JSON parse failed: %s", e)
+        raise
+
+    sources_used, sources_list = search.to_sources_meta()
+    result["source_mode"]  = search.source_mode
+    result["sources_used"] = sources_used
+    result["sources_list"] = sources_list
 
     # ── 4. Persist ───────────────────────────────────────────────────────────
     db = SessionLocal()
